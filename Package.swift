@@ -154,7 +154,6 @@ let cmlx = Target.target(
         "mlx/mlx/backend/cuda/compiled.cpp",
         "mlx/mlx/backend/cuda/conv.cpp",
         "mlx/mlx/backend/cuda/cublas_utils.cpp",
-        "mlx/mlx/backend/cuda/cuda.cpp",
         "mlx/mlx/backend/cuda/cudnn_utils.cpp",
         "mlx/mlx/backend/cuda/custom_kernel.cpp",
         "mlx/mlx/backend/cuda/delayload.cpp",
@@ -336,7 +335,7 @@ let package = Package(
             sources: ["CustomFunctionExampleSimple.swift"]
         ),
     ],
-    cxxLanguageStandard: .gnucxx20
+    cxxLanguageStandard: .gnucxx17
 )
 
 if Context.environment["MLX_SWIFT_BUILD_DOC"] == "1"
