@@ -4,3 +4,9 @@
 [submodule "submodules/mlx-c"]
 	path = Source/Cmlx/mlx-c
 	url = https://github.com/ml-explore/mlx-c
+[submodule "Source/Cmlx/mlx"]
+	path = Source/Cmlx/mlx
+	url = https://github.com/SharpAI/mlx
+[submodule "Source/Cmlx/mlx-c"]
+	path = Source/Cmlx/mlx-c
+	url = https://github.com/SharpAI/mlx-c
