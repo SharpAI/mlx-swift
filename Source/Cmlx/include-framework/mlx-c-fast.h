@@ -194,10 +194,66 @@ int mlx_fast_scaled_dot_product_attention(
     float scale,
     const char* mask_mode,
     const mlx_array mask_arr /* may be null */,
-    const mlx_array sinks /* may be null */,
     const mlx_stream s);
 
+int mlx_fast_streamed_gather_mm(
+    mlx_array* res,
+    const mlx_array x,
+    const mlx_array w_shape,
+    const mlx_array expert_indices,
+    const char* safetensors_path,
+    const char* tensor_name,
+    const mlx_stream s);
+
+int mlx_fast_turbo_encode(
+    mlx_array* res_polar_k,
+    mlx_array* res_polar_v,
+    mlx_array* res_residual_k,
+    mlx_array* res_residual_v,
+    const mlx_array keys,
+    const mlx_array values,
+    int k_bits,
+    const mlx_stream s);
+
+int mlx_fast_turbo_decode_k(
+    mlx_array* res,
+    const mlx_array packed,
+    const mlx_stream s);
+
+int mlx_fast_turbo_decode_v(
+    mlx_array* res,
+    const mlx_array packed,
+    const mlx_stream s);
+
+int mlx_fast_prefault(mlx_array x);
+
+
+// pread() directly into the already-evaluated MLX array's unified memory buffer.
+// This gives full NVMe sequential throughput without OS page-fault overhead.
+// The array MUST already be evaluated (concrete pointer exists).
+// safetensors_path: full path to .safetensors file
+// tensor_name: e.g. "model.layers.0.mlp.experts.gate_proj.weight"
+// expert_index: 0-based index of the expert to read
+int mlx_fast_pread_into(
+    mlx_array dst,
+    const char* safetensors_path,
+    const char* tensor_name,
+    uint32_t expert_index);
+
 /**@}*/
+
+// ── SSD Flash-Stream metrics snapshot ────────────────────────────────────────
+// Cumulative NVMe throughput stats since process start.
+// Call mlx_ssd_metrics_snapshot() from any thread to read without resetting counters.
+
+typedef struct MlxSSDMetricsSnapshot {
+    double   throughput_mb_per_s;  /* 10-s rolling window average (0 before first window) */
+    uint64_t total_bytes_read;     /* Lifetime bytes read from SSD */
+    uint64_t total_chunks;         /* Lifetime expert chunks loaded */
+    double   avg_chunk_latency_ms; /* Lifetime average per-chunk latency (ms) */
+} MlxSSDMetricsSnapshot;
+
+void mlx_ssd_metrics_snapshot(MlxSSDMetricsSnapshot* out);
 
 #ifdef __cplusplus
 }
