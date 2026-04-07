@@ -11,7 +11,6 @@
 
 namespace mlx::core::gpu {
 
-void init();
 void new_stream(Stream stream);
 void eval(array& arr);
 void finalize(Stream s);

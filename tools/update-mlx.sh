@@ -54,7 +54,6 @@ make \
     steel_attention \
     steel_attention_nax \
     steel_conv \
-    steel_conv_3d \
     steel_conv_general \
     steel_gemm_fused \
     steel_gemm_fused_nax \

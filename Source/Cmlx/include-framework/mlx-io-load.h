@@ -15,9 +15,7 @@
 #include <unistd.h>
 #endif
 
-// Detect iOS/tvOS/watchOS to select safe sequential I/O.
-// On Apple mobile OSes, EXC_RESOURCE (RESOURCE_TYPE_WAKEUPS) is triggered when
-// std::async thread spawning causes too many wakeups per second.
+// Detect iOS to force sequential I/O (prevents EXC_RESOURCE WAKEUPS).
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
   #define MLX_IOS_SEQUENTIAL_IO 1
 #elif defined(__APPLE__)
@@ -114,14 +112,10 @@ class ParallelFileReader : public Reader {
   }
 
  private:
-  // On iOS, always use sequential pread() — no std::async thread spawning.
-  // std::async wakeup bursts during model loading exceed iOS's per-process
-  // wakeup rate limit → EXC_RESOURCE (RESOURCE_TYPE_WAKEUPS) crash.
-  // On macOS, 32MB parallel batches maximize NVMe throughput.
 #ifdef MLX_IOS_SEQUENTIAL_IO
-  static constexpr size_t batch_size_ = SIZE_MAX;
+  static constexpr size_t batch_size_ = SIZE_MAX;  // iOS: sequential only, no wakeups
 #else
-  static constexpr size_t batch_size_ = 1 << 25;  // 32MB
+  static constexpr size_t batch_size_ = 1 << 25;   // macOS: 32MB parallel batches
 #endif
   static ThreadPool& thread_pool();
   int fd_;
