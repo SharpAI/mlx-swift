@@ -228,6 +228,15 @@ int mlx_fast_turbo_decode_v(
 int mlx_fast_prefault(mlx_array x);
 
 
+// mlx_fast_submit_prefetch (PAPPS Background Worker)
+// Instantly queues an asynchronous NVMe read into a background Thread Pool.
+int mlx_fast_submit_prefetch(
+    const char* safetensors_path,
+    const char* tensor_name,
+    uint32_t expert_index);
+
+void mlx_fast_set_prefetch_enabled(bool enabled);
+
 // pread() directly into the already-evaluated MLX array's unified memory buffer.
 // This gives full NVMe sequential throughput without OS page-fault overhead.
 // The array MUST already be evaluated (concrete pointer exists).

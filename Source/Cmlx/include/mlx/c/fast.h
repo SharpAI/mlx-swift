@@ -234,6 +234,14 @@ int mlx_fast_pread_into(
     const char* tensor_name,
     uint32_t expert_index);
 
+// mlx_fast_submit_prefetch (PAPPS Background Worker)
+int mlx_fast_submit_prefetch(
+    const char* safetensors_path,
+    const char* tensor_name,
+    uint32_t expert_index);
+
+void mlx_fast_set_prefetch_enabled(bool enabled);
+
 /**@}*/
 
 // ── SSD Flash-Stream metrics snapshot ────────────────────────────────────────

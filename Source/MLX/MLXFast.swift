@@ -376,6 +376,25 @@ public enum MLXFast {
         }
     }
 
+    /// Submits an asynchronous background prefetch for a specific expert's weights.
+    /// The fetch is handled by a persistent C++ background thread and placed in a unified memory arena.
+    public static func pappsPrefetch(
+        safetensorsPath: String,
+        tensorName: String,
+        expertIndex: UInt32
+    ) {
+        safetensorsPath.withCString { pathPtr in
+            tensorName.withCString { namePtr in
+                mlx_fast_submit_prefetch(pathPtr, namePtr, expertIndex)
+            }
+        }
+    }
+
+    /// Dynamically toggles the allocation and evaluation of the background SSD 16-worker thread pool.
+    public static func setPrefetchEnabled(_ enabled: Bool) {
+        mlx_fast_set_prefetch_enabled(enabled)
+    }
+
 }
 
 /// Optimized implementation of `NN.RoPE`.
