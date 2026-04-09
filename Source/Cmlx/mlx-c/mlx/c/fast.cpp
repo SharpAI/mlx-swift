@@ -868,6 +868,11 @@ extern "C" int mlx_fast_prefault(
 // This gives full NVMe sequential throughput (~5 GB/s) while preserving all
 // MLX tensor metadata (shape, strides, dtype) on the dst array.
 // ─────────────────────────────────────────────────────────────────────────────
+#include <queue>
+#include <deque>
+#include <thread>
+#include <condition_variable>
+
 struct STPReadEntry {
     int fd = -1;
     size_t data_start = 0;
@@ -875,6 +880,202 @@ struct STPReadEntry {
 };
 static std::mutex st_pread_cache_mutex;
 static std::unordered_map<std::string, STPReadEntry> st_pread_cache;
+
+static STPReadEntry get_safetensors_entry(const std::string& path, const std::string& tname, const std::string& key) {
+    std::lock_guard<std::mutex> lock(st_pread_cache_mutex);
+    auto it = st_pread_cache.find(key);
+    if (it != st_pread_cache.end()) {
+        return it->second;
+    }
+    
+    int new_fd = open(path.c_str(), O_RDONLY);
+    if (new_fd < 0) throw std::runtime_error("[pread_into] Cannot open: " + path);
+
+    uint64_t hlen = 0;
+    if (pread(new_fd, &hlen, 8, 0) != 8) { close(new_fd); throw std::runtime_error("[pread_into] Cannot read header length"); }
+    std::vector<char> hbuf(hlen);
+    if ((size_t)pread(new_fd, hbuf.data(), hlen, 8) != hlen) { close(new_fd); throw std::runtime_error("[pread_into] Cannot read header JSON"); }
+    auto j = nlohmann::json::parse(hbuf.data(), hbuf.data() + hlen);
+    size_t data_section_start = 8 + hlen;
+
+    size_t data_start = 0;
+    size_t bytes_per_expert = 0;
+    for (auto& item : j.items()) {
+        if (item.key() == tname) {
+            auto& v = item.value();
+            auto shape = v.at("shape").get<std::vector<size_t>>();
+            auto offsets = v.at("data_offsets").get<std::vector<size_t>>();
+            size_t E = shape[0];
+            bytes_per_expert = (offsets[1] - offsets[0]) / E;
+            data_start = data_section_start + offsets[0];
+            break;
+        }
+    }
+    if (bytes_per_expert == 0) { close(new_fd); throw std::runtime_error("[pread_into] Tensor not found: " + tname); }
+
+    STPReadEntry entry{ new_fd, data_start, bytes_per_expert };
+    st_pread_cache[key] = entry;
+    return entry;
+}
+
+#include <unordered_set>
+// --- PAPPS Async Background Worker (16-Thread Pool) ---
+struct PAPPSJob {
+    std::string cache_id;
+    int fd;
+    off_t file_offset;
+    size_t length;
+};
+
+class PAPPSQueue {
+public:
+    PAPPSQueue() {
+        for (int i = 0; i < 16; ++i) {
+            workers_.emplace_back([this]() {
+                while (true) {
+                    PAPPSJob job;
+                    {
+                        std::unique_lock<std::mutex> lock(queue_mutex_);
+                        cv_.wait(lock, [this]() { return stop_ || !queue_.empty(); });
+                        if (stop_ && queue_.empty()) return;
+                        job = queue_.front();
+                        queue_.pop();
+                    }
+
+                    void* data = nullptr;
+                    if (posix_memalign(&data, 4096, job.length) != 0) {
+                        std::lock_guard<std::mutex> lock(cache_mutex_);
+                        in_flight_.erase(job.cache_id);
+                        continue;
+                    }
+                    
+                    ssize_t result = pread(job.fd, data, job.length, job.file_offset);
+                    
+                    std::lock_guard<std::mutex> lock(cache_mutex_);
+                    in_flight_.erase(job.cache_id);
+                    
+                    if (result > 0 && (size_t)result == job.length) {
+                        if (cache_.find(job.cache_id) != cache_.end()) {
+                            free(data);
+                        } else {
+                            cache_[job.cache_id] = {data, job.length};
+                            
+                            cache_hist_.push_back(job.cache_id);
+                            if (cache_hist_.size() > 600) {
+                                std::string old_key = cache_hist_.front();
+                                cache_hist_.pop_front();
+                                auto it = cache_.find(old_key);
+                                if (it != cache_.end()) {
+                                    free(it->second.first);
+                                    cache_.erase(it);
+                                }
+                            }
+                        }
+                    } else {
+                        free(data);
+                    }
+                }
+            });
+        }
+    }
+
+    ~PAPPSQueue() {
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex_);
+            stop_ = true;
+        }
+        cv_.notify_all();
+        for (auto& worker : workers_) {
+            if (worker.joinable()) worker.join();
+        }
+        for (auto& kv : cache_) {
+            free(kv.second.first);
+        }
+    }
+
+    void submit(const std::string& cache_id, int fd, off_t offset, size_t length) {
+        {
+            std::lock_guard<std::mutex> lock(cache_mutex_);
+            if (cache_.find(cache_id) != cache_.end()) return;
+            if (in_flight_.find(cache_id) != in_flight_.end()) return;
+            in_flight_.insert(cache_id);
+        }
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex_);
+            queue_.push({cache_id, fd, offset, length});
+        }
+        cv_.notify_one();
+    }
+
+    bool try_take(const std::string& cache_id, void* dst, size_t length) {
+        void* src = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(cache_mutex_);
+            auto it = cache_.find(cache_id);
+            if (it != cache_.end()) {
+                src = it->second.first;
+                cache_.erase(it);
+            }
+        }
+        if (src) {
+            std::memcpy(dst, src, length);
+            free(src);
+            return true;
+        }
+        return false;
+    }
+
+private:
+    std::vector<std::thread> workers_;
+    std::mutex queue_mutex_;
+    std::condition_variable cv_;
+    std::queue<PAPPSJob> queue_;
+    bool stop_ = false;
+
+    std::mutex cache_mutex_;
+    std::unordered_map<std::string, std::pair<void*, size_t>> cache_;
+    std::deque<std::string> cache_hist_;
+    std::unordered_set<std::string> in_flight_;
+};
+
+static PAPPSQueue* global_papps_queue = nullptr;
+static std::mutex global_papps_mutex;
+
+extern "C" void mlx_fast_set_prefetch_enabled(bool enabled) {
+    std::lock_guard<std::mutex> lock(global_papps_mutex);
+    if (enabled) {
+        if (!global_papps_queue) {
+            global_papps_queue = new PAPPSQueue();
+        }
+    } else {
+        if (global_papps_queue) {
+            delete global_papps_queue;
+            global_papps_queue = nullptr;
+        }
+    }
+}
+extern "C" int mlx_fast_submit_prefetch(
+    const char* safetensors_path,
+    const char* tensor_name,
+    uint32_t expert_index) {
+    try {
+        std::string path(safetensors_path);
+        std::string tname(tensor_name);
+        std::string key = path + "|" + tname;
+
+        STPReadEntry entry = get_safetensors_entry(path, tname, key);
+        off_t file_offset = static_cast<off_t>(entry.data_start + (size_t)expert_index * entry.bytes_per_expert);
+        std::string cache_id = key + "_" + std::to_string(file_offset);
+        
+        std::lock_guard<std::mutex> lock(global_papps_mutex);
+        if (global_papps_queue) {
+            global_papps_queue->submit(cache_id, entry.fd, file_offset, entry.bytes_per_expert);
+        }
+    } catch (std::exception& e) {
+        return 1;
+    }
+    return 0;
+}
 
 extern "C" int mlx_fast_pread_into(
     mlx_array dst,
@@ -886,53 +1087,30 @@ extern "C" int mlx_fast_pread_into(
         std::string tname(tensor_name);
         std::string key = path + "|" + tname;
 
-        size_t data_start = 0;
-        size_t bytes_per_expert = 0;
-        int fd = -1;
-
-        {
-            std::lock_guard<std::mutex> lock(st_pread_cache_mutex);
-            auto it = st_pread_cache.find(key);
-            if (it != st_pread_cache.end()) {
-                fd = it->second.fd;
-                data_start = it->second.data_start;
-                bytes_per_expert = it->second.bytes_per_expert;
-            } else {
-                int new_fd = open(path.c_str(), O_RDONLY);
-                if (new_fd < 0) throw std::runtime_error("[pread_into] Cannot open: " + path);
-
-                uint64_t hlen = 0;
-                if (pread(new_fd, &hlen, 8, 0) != 8) { close(new_fd); throw std::runtime_error("[pread_into] Cannot read header length"); }
-                std::vector<char> hbuf(hlen);
-                if ((size_t)pread(new_fd, hbuf.data(), hlen, 8) != hlen) { close(new_fd); throw std::runtime_error("[pread_into] Cannot read header JSON"); }
-                auto j = nlohmann::json::parse(hbuf.data(), hbuf.data() + hlen);
-                size_t data_section_start = 8 + hlen;
-
-                for (auto& item : j.items()) {
-                    if (item.key() == tname) {
-                        auto& v = item.value();
-                        auto shape = v.at("shape").get<std::vector<size_t>>();
-                        auto offsets = v.at("data_offsets").get<std::vector<size_t>>();
-                        size_t E = shape[0];
-                        bytes_per_expert = (offsets[1] - offsets[0]) / E;
-                        data_start = data_section_start + offsets[0];
-                        break;
-                    }
-                }
-                if (bytes_per_expert == 0) { close(new_fd); throw std::runtime_error("[pread_into] Tensor not found: " + tname); }
-
-                STPReadEntry entry{ new_fd, data_start, bytes_per_expert };
-                st_pread_cache[key] = entry;
-                fd = new_fd;
-            }
-        }
+        STPReadEntry entry = get_safetensors_entry(path, tname, key);
 
         auto& arr = mlx_array_get_(dst);
         void* buf = const_cast<void*>(static_cast<const void*>(arr.data<uint8_t>()));
         if (!buf) throw std::runtime_error("[pread_into] dst has no data pointer — call eval() first");
         size_t nbytes = arr.nbytes();
-        off_t file_offset = static_cast<off_t>(data_start + (size_t)expert_index * bytes_per_expert);
-        ssize_t result = pread(fd, buf, nbytes, file_offset);
+        off_t file_offset = static_cast<off_t>(entry.data_start + (size_t)expert_index * entry.bytes_per_expert);
+        
+        // PAPPS: Try to absorb the asynchronous background copy directly if available
+        std::string cache_id = key + "_" + std::to_string(file_offset);
+        bool hit = false;
+        {
+            std::lock_guard<std::mutex> lock(global_papps_mutex);
+            if (global_papps_queue) {
+                hit = global_papps_queue->try_take(cache_id, buf, nbytes);
+            }
+        }
+        
+        if (hit) {
+            return 0; // successfully consumed prefetched pointer zero-latency!
+        }
+
+        // Cache Miss — Fallback to synchronous standard read
+        ssize_t result = pread(entry.fd, buf, nbytes, file_offset);
         if (result < 0 || (size_t)result != nbytes)
             throw std::runtime_error("[pread_into] pread failed: got " + std::to_string(result) + " of " + std::to_string(nbytes));
 
