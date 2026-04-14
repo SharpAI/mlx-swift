@@ -1,0 +1,58 @@
+name: Downstream Integration Test
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-swiftlm-umbrella:
+    name: Test with SwiftLM (Umbrella Repo)
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout PR branch (mlx-swift)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: mlx-swift-pr
+
+      - name: Checkout SwiftLM (Parent Repo)
+        uses: actions/checkout@v4
+        with:
+          repository: SharpAI/SwiftLM
+          path: SwiftLM
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: Resolve Dependencies (to populate SPM cache)
+        run: swift package resolve
+        working-directory: SwiftLM
+
+      - name: Override mlx-swift dependency with PR checkout
+        # SPM `package edit` puts a local editable copy of the package in
+        # .build/checkouts; we then replace its contents with our PR branch.
+        run: |
+          swift package edit mlx-swift --path $GITHUB_WORKSPACE/mlx-swift-pr
+        working-directory: SwiftLM
+
+      - name: Build SwiftLM
+        run: swift build --build-tests
+        working-directory: SwiftLM
+
+      - name: Install MLX Metal library
+        run: |
+          python3 -m venv /tmp/mlx_venv
+          /tmp/mlx_venv/bin/pip install --quiet mlx
+          METALLIB=/tmp/mlx_venv/lib/python*/site-packages/mlx/lib/mlx.metallib
+          # Copy to all locations the test runner and linked bundles may search
+          cp $METALLIB SwiftLM/.build/debug/ || true
+          find SwiftLM/.build -name "*.xctest" -exec cp $METALLIB {}/Contents/MacOS/ \; 2>/dev/null || true
+          find SwiftLM/.build -type d \( -name "debug" -o -name "release" \) -exec cp $METALLIB {}/ \; 2>/dev/null || true
+          # Also copy beside test binaries directly
+          find SwiftLM/.build -name "*Tests" -type f -exec sh -c 'cp '$METALLIB' "$(dirname {})"/' \; 2>/dev/null || true
+
+      - name: Run SwiftLM Integration Tests
+        run: swift test --parallel --skip-build
+        working-directory: SwiftLM
