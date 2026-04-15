@@ -29,13 +29,14 @@ jobs:
       - name: Redirect Dependencies to Local Form
         run: |
           # Point SwiftLM to the local checkouts
-          sed -i '' -E 's|\.package\(url: "https://github.com/SharpAI/mlx-swift.*|\.package(path: "../mlx-swift"),|' SwiftLM/Package.swift
+          sed -i '' -E 's|\.package\(url: "https://github.com/SharpAI/mlx-swift\.git".*|\.package(path: "../mlx-swift"),|' SwiftLM/Package.swift
+          sed -i '' -E 's|\.package\(url: "https://github.com/ml-explore/mlx-swift\.git".*|\.package(path: "../mlx-swift"),|' SwiftLM/Package.swift
           sed -i '' -E 's|\.package\(path: "\./mlx-swift-lm".*|\.package(path: "../mlx-swift-lm"),|' SwiftLM/Package.swift
-          sed -i '' -E 's|\.package\(url: "https://github.com/SharpAI/mlx-swift-lm.*|\.package(path: "../mlx-swift-lm"),|' SwiftLM/Package.swift
+          sed -i '' -E 's|\.package\(url: "https://github.com/SharpAI/mlx-swift-lm\.git".*|\.package(path: "../mlx-swift-lm"),|' SwiftLM/Package.swift
           
           # Point mlx-swift-lm to the local checkout of mlx-swift
-          sed -i '' -E 's|\.package\(url: "https://github.com/SharpAI/mlx-swift.*|\.package(path: "../mlx-swift"),|' mlx-swift-lm/Package.swift
-          sed -i '' -E 's|\.package\(url: "https://github.com/ml-explore/mlx-swift.*|\.package(path: "../mlx-swift"),|' mlx-swift-lm/Package.swift
+          sed -i '' -E 's|\.package\(url: "https://github.com/SharpAI/mlx-swift\.git".*|\.package(path: "../mlx-swift"),|' mlx-swift-lm/Package.swift
+          sed -i '' -E 's|\.package\(url: "https://github.com/ml-explore/mlx-swift\.git".*|\.package(path: "../mlx-swift"),|' mlx-swift-lm/Package.swift
           
       - name: Build SwiftLM
         run: |
