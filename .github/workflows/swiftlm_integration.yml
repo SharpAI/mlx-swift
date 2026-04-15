@@ -5,7 +5,7 @@ on: [pull_request, push]
 jobs:
   integration-test:
     name: Build & Test SwiftLM
-    runs-on: [self-hosted, macos]
+    runs-on: macos-15
     steps:
       - name: Checkout mlx-swift (this repository)
         uses: actions/checkout@v4
