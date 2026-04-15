@@ -35,17 +35,29 @@ jobs:
           cd SwiftLM
           swift build -c release
 
-      - name: Install MLX Metal library
+      - name: Compile MLX Metal library from source
         run: |
-          python3 -m venv /tmp/mlx_venv
-          /tmp/mlx_venv/bin/pip install --quiet mlx
-          MLX_LIB=$(find /tmp/mlx_venv -name "mlx.metallib" | head -n 1)
-          echo "Copying metallib from $MLX_LIB"
-          # Next to the release binary so the server process finds it immediately
-          cp "$MLX_LIB" SwiftLM/.build/release/
-          # Also seed all other build output dirs defensively
-          find SwiftLM/.build -type d \( -name "debug" -o -name "release" \) \
-            -exec cp "$MLX_LIB" {}/ \; 2>/dev/null || true
+          KERNELS_DIR="mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels"
+          OUT_DIR="SwiftLM/.build/release"
+          mkdir -p /tmp/mlx_air
+
+          # Compile every .metal file to .air
+          find "$KERNELS_DIR" -name "*.metal" | while read f; do
+            name=$(basename "$f" .metal)
+            xcrun metal -sdk macosx \
+              -I "mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels" \
+              -c "$f" -o "/tmp/mlx_air/${name}.air" 2>/dev/null || true
+          done
+
+          # Link all .air files into mlx.metallib
+          AIR_FILES=$(find /tmp/mlx_air -name "*.air")
+          if [ -n "$AIR_FILES" ]; then
+            xcrun metallib $AIR_FILES -o "$OUT_DIR/mlx.metallib"
+            echo "Built mlx.metallib -> $OUT_DIR/mlx.metallib"
+          else
+            echo "ERROR: No .air files produced — Metal compilation failed"
+            exit 1
+          fi
 
       - name: Run Speculative Decoding Tests
         run: |
