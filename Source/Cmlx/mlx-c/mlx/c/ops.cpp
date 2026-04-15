@@ -1062,6 +1062,7 @@ extern "C" int mlx_dequantize(
     mlx_optional_int group_size,
     mlx_optional_int bits,
     const char* mode,
+    const mlx_array global_scale /* may be null */,
     mlx_optional_dtype dtype,
     const mlx_stream s) {
   try {
@@ -2487,6 +2488,8 @@ extern "C" int mlx_qqmm(
     mlx_optional_int group_size,
     mlx_optional_int bits,
     const char* mode,
+    const mlx_array global_scale_x /* may be null */,
+    const mlx_array global_scale_w /* may be null */,
     const mlx_stream s) {
   try {
     mlx_array_set_(
@@ -2514,6 +2517,7 @@ extern "C" int mlx_quantize(
     mlx_optional_int group_size,
     mlx_optional_int bits,
     const char* mode,
+    const mlx_array global_scale /* may be null */,
     const mlx_stream s) {
   try {
     mlx_vector_array_set_(
@@ -3933,4 +3937,24 @@ mlx_zeros_like(mlx_array* res, const mlx_array a, const mlx_stream s) {
     return 1;
   }
   return 0;
+}
+
+extern "C" int mlx_bartlett(mlx_array* res, int M, const mlx_stream s) {
+  mlx_error("mlx_bartlett not implemented in SharpAI MLX fork");
+  return 1;
+}
+
+extern "C" int mlx_blackman(mlx_array* res, int M, const mlx_stream s) {
+  mlx_error("mlx_blackman not implemented in SharpAI MLX fork");
+  return 1;
+}
+
+extern "C" int mlx_hamming(mlx_array* res, int M, const mlx_stream s) {
+  mlx_error("mlx_hamming not implemented in SharpAI MLX fork");
+  return 1;
+}
+
+extern "C" int mlx_hanning(mlx_array* res, int M, const mlx_stream s) {
+  mlx_error("mlx_hanning not implemented in SharpAI MLX fork");
+  return 1;
 }
