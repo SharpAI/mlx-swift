@@ -1,0 +1,40 @@
+name: SwiftLM Integration Tests
+
+on: [pull_request, push]
+
+jobs:
+  integration-test:
+    name: Build & Test SwiftLM
+    runs-on: [self-hosted, macos]
+    steps:
+      - name: Checkout mlx-swift (this repository)
+        uses: actions/checkout@v4
+        with:
+          path: mlx-swift
+          submodules: recursive
+
+      - name: Checkout SwiftLM
+        uses: actions/checkout@v4
+        with:
+          repository: SharpAI/SwiftLM
+          path: SwiftLM
+          submodules: recursive
+
+      - name: Redirect Dependencies to Local Form
+        run: |
+          cd SwiftLM
+          
+          # Replace the git remote mlx-swift url with the local folder in both Package.swift files
+          sed -i '' -E 's|\.package\(url: "https://github.com/SharpAI/mlx-swift.*|\.package(path: "../mlx-swift"),|' Package.swift
+          sed -i '' -E 's|\.package\(url: "https://github.com/SharpAI/mlx-swift.*|\.package(path: "../../mlx-swift"),|' mlx-swift-lm/Package.swift
+          sed -i '' -E 's|\.package\(url: "https://github.com/ml-explore/mlx-swift.*|\.package(path: "../../mlx-swift"),|' mlx-swift-lm/Package.swift
+          
+      - name: Build SwiftLM
+        run: |
+          cd SwiftLM
+          swift build -c release
+
+      - name: Run Speculative Decoding Tests
+        run: |
+          cd SwiftLM
+          bash tests/test-speculative-eval.sh
