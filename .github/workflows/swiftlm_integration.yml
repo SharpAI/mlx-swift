@@ -35,29 +35,25 @@ jobs:
           cd SwiftLM
           swift build -c release
 
-      - name: Compile MLX Metal library from source
+      - name: Install MLX Metal library (matching pinned version)
         run: |
-          KERNELS_DIR="mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels"
-          OUT_DIR="SwiftLM/.build/release"
-          mkdir -p /tmp/mlx_air
+          # Extract the exact mlx-swift version pinned in SwiftLM/Package.swift
+          # and install the matching Python mlx wheel — it ships the same metallib
+          PINNED=$(grep -E 'mlx-swift.*exact:' SwiftLM/Package.swift | grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' | tr -d '"' | head -1)
+          echo "SwiftLM pins mlx-swift at: ${PINNED:-latest}"
 
-          # Compile every .metal file to .air
-          find "$KERNELS_DIR" -name "*.metal" | while read f; do
-            name=$(basename "$f" .metal)
-            xcrun metal -sdk macosx \
-              -I "mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels" \
-              -c "$f" -o "/tmp/mlx_air/${name}.air" 2>/dev/null || true
-          done
-
-          # Link all .air files into mlx.metallib
-          AIR_FILES=$(find /tmp/mlx_air -name "*.air")
-          if [ -n "$AIR_FILES" ]; then
-            xcrun metallib $AIR_FILES -o "$OUT_DIR/mlx.metallib"
-            echo "Built mlx.metallib -> $OUT_DIR/mlx.metallib"
+          python3 -m venv /tmp/mlx_venv
+          if [ -n "$PINNED" ]; then
+            /tmp/mlx_venv/bin/pip install --quiet "mlx==$PINNED" || \
+            /tmp/mlx_venv/bin/pip install --quiet mlx  # fallback to latest
           else
-            echo "ERROR: No .air files produced — Metal compilation failed"
-            exit 1
+            /tmp/mlx_venv/bin/pip install --quiet mlx
           fi
+
+          MLX_LIB=$(find /tmp/mlx_venv -name "mlx.metallib" | head -1)
+          echo "Found metallib: $MLX_LIB"
+          cp "$MLX_LIB" SwiftLM/.build/release/mlx.metallib
+          echo "Installed mlx.metallib -> SwiftLM/.build/release/"
 
       - name: Run Speculative Decoding Tests
         run: |
