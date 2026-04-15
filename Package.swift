@@ -157,8 +157,8 @@ let cmlx = Target.target(
         "mlx/mlx/backend/cuda/cudnn_utils.cpp",
         "mlx/mlx/backend/cuda/custom_kernel.cpp",
         "mlx/mlx/backend/cuda/delayload.cpp",
-        "mlx/mlx/backend/cuda/device_info.cpp",
         "mlx/mlx/backend/cuda/device.cpp",
+        "mlx/mlx/backend/cuda/device_info.cpp",
         "mlx/mlx/backend/cuda/eval.cpp",
         "mlx/mlx/backend/cuda/fence.cpp",
         "mlx/mlx/backend/cuda/indexing.cpp",
@@ -209,7 +209,8 @@ let cmlx = Target.target(
         .headerSearchPath("mlx-c"),
         .headerSearchPath("json/single_include/nlohmann"),
         .headerSearchPath("fmt/include"),
-        .define("MLX_VERSION", to: "\"0.31.1\""),
+        .define("MLX_VERSION", to: "\"0.24.2\""),
+        .define("MLX_ENABLE_NAX", to: "1"),
     ],
     linkerSettings: linkerSettings
 )
@@ -334,7 +335,7 @@ let package = Package(
             sources: ["CustomFunctionExampleSimple.swift"]
         ),
     ],
-    cxxLanguageStandard: .gnucxx20
+    cxxLanguageStandard: .gnucxx17
 )
 
 if Context.environment["MLX_SWIFT_BUILD_DOC"] == "1"

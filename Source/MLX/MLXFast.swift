@@ -259,6 +259,142 @@ public enum MLXFast {
         return MLXArray(result)
     }
 
+    public static func turboQuantEncode(
+        keys: MLXArray, values: MLXArray, bits: Int = 3, stream: StreamOrDevice = .default
+    ) -> ((MLXArray, MLXArray), (MLXArray, MLXArray)) {
+        var resPolarK = mlx_array_new()
+        var resPolarV = mlx_array_new()
+        var resResidualK = mlx_array_new()
+        var resResidualV = mlx_array_new()
+
+        mlx_fast_turbo_encode(
+            &resPolarK, &resPolarV, &resResidualK, &resResidualV,
+            keys.ctx, values.ctx, Int32(bits),
+            stream.ctx
+        )
+        
+        let kTuple = (MLXArray(resPolarK), MLXArray(resResidualK))
+        let vTuple = (MLXArray(resPolarV), MLXArray(resResidualV))
+        return (kTuple, vTuple)
+    }
+
+    /// Batch-decode TurboKV compressed key history (packed uint8) back to float32.
+    ///
+    /// - Parameter packed: `[..., 68]` uint8 for D=128, or `[..., 136]` for D=256
+    /// - Returns: `[..., headDim]` float32 — caller casts to model dtype as needed
+    public static func turboDecodeK(
+        packed: MLXArray, stream: StreamOrDevice = .default
+    ) -> MLXArray {
+        var result = mlx_array_new()
+        mlx_fast_turbo_decode_k(&result, packed.ctx, stream.ctx)
+        return MLXArray(result)
+    }
+
+    /// Batch-decode TurboKV compressed value history (packed uint8) back to float32.
+    ///
+    /// - Parameter packed: `[..., 50]` uint8 for D=128, or `[..., 100]` for D=256
+    /// - Returns: `[..., headDim]` float32 — caller casts to model dtype as needed
+    public static func turboDecodeV(
+        packed: MLXArray, stream: StreamOrDevice = .default
+    ) -> MLXArray {
+        var result = mlx_array_new()
+        mlx_fast_turbo_decode_v(&result, packed.ctx, stream.ctx)
+        return MLXArray(result)
+    }
+
+    // ── SSD Flash-Stream Metrics ──────────────────────────────────────────────
+
+    /// Snapshot of cumulative SSD streaming throughput stats.
+    /// Safe to call from any thread at any time.
+    public struct SSDMetricsSnapshot: Sendable {
+        /// Rolling average throughput over the last 10-second window (MB/s).
+        /// Zero until the first 10 s window has elapsed.
+        public let throughputMBperS: Double
+        /// Lifetime bytes loaded from SSD since process start.
+        public let totalBytesRead:   UInt64
+        /// Lifetime expert chunks loaded from SSD since process start.
+        public let totalChunks:      UInt64
+        /// Lifetime average latency per expert chunk (ms).
+        public let avgChunkLatencyMS: Double
+    }
+
+    /// Read the current SSD Flash-Stream metrics without resetting any counters.
+    public static func ssdMetricsSnapshot() -> SSDMetricsSnapshot {
+        var raw = MlxSSDMetricsSnapshot()
+        mlx_ssd_metrics_snapshot(&raw)
+        return SSDMetricsSnapshot(
+            throughputMBperS:  raw.throughput_mb_per_s,
+            totalBytesRead:    raw.total_bytes_read,
+            totalChunks:       raw.total_chunks,
+            avgChunkLatencyMS: raw.avg_chunk_latency_ms
+        )
+    }
+
+    public static func streamedGatherMM(
+        x: MLXArray, wShape: MLXArray, activeExpert: UInt32, safetensorsPath: String, tensorName: String, stream: StreamOrDevice = .default
+    ) -> MLXArray {
+        var result = mlx_array_new()
+        
+        safetensorsPath.withCString { pathPtr in
+            tensorName.withCString { namePtr in
+                mlx_fast_streamed_gather_mm(
+                    &result,
+                    x.ctx,
+                    wShape.ctx,
+                    activeExpert,
+                    pathPtr,
+                    namePtr,
+                    stream.ctx
+                )
+            }
+        }
+
+        return MLXArray(result)
+    }
+
+    /// Explicitly page-faults the underlying memory buffer on the CPU thread.
+    /// Used during heavy SSD swap evaluation to bypass GPU Watchdog timeouts.
+    public static func prefault(_ x: MLXArray) {
+        mlx_fast_prefault(x.ctx)
+    }
+
+    /// Overwrites an already-evaluated MLX array's buffer by pread()-ing
+    /// the given expert's bytes directly from a safetensors file.
+    /// Gives full NVMe sequential read throughput (~5 GB/s).
+    /// The array MUST already be evaluated before calling this.
+    @discardableResult
+    public static func preadInto(
+        _ dst: MLXArray,
+        safetensorsPath: String,
+        tensorName: String,
+        expertIndex: UInt32
+    ) -> Int32 {
+        safetensorsPath.withCString { pathPtr in
+            tensorName.withCString { namePtr in
+                mlx_fast_pread_into(dst.ctx, pathPtr, namePtr, expertIndex)
+            }
+        }
+    }
+
+    /// Submits an asynchronous background prefetch for a specific expert's weights.
+    /// The fetch is handled by a persistent C++ background thread and placed in a unified memory arena.
+    public static func pappsPrefetch(
+        safetensorsPath: String,
+        tensorName: String,
+        expertIndex: UInt32
+    ) {
+        safetensorsPath.withCString { pathPtr in
+            tensorName.withCString { namePtr in
+                mlx_fast_submit_prefetch(pathPtr, namePtr, expertIndex)
+            }
+        }
+    }
+
+    /// Dynamically toggles the allocation and evaluation of the background SSD 16-worker thread pool.
+    public static func setPrefetchEnabled(_ enabled: Bool) {
+        mlx_fast_set_prefetch_enabled(enabled)
+    }
+
 }
 
 /// Optimized implementation of `NN.RoPE`.
@@ -367,3 +503,6 @@ public func layerNorm(
 ) -> MLXArray {
     return MLXFast.layerNorm(x, weight: weight, bias: bias, eps: eps, stream: stream)
 }
+
+
+

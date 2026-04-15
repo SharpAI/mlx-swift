@@ -197,7 +197,69 @@ int mlx_fast_scaled_dot_product_attention(
     const mlx_array sinks /* may be null */,
     const mlx_stream s);
 
+int mlx_fast_streamed_gather_mm(
+    mlx_array* res,
+    const mlx_array x,
+    const mlx_array w_shape,
+    uint32_t active_expert,
+    const char* safetensors_path,
+    const char* tensor_name,
+    const mlx_stream s);
+
+int mlx_fast_turbo_encode(
+    mlx_array* res_polar_k,
+    mlx_array* res_polar_v,
+    mlx_array* res_residual_k,
+    mlx_array* res_residual_v,
+    const mlx_array keys,
+    const mlx_array values,
+    int k_bits,
+    const mlx_stream s);
+
+int mlx_fast_turbo_decode_k(
+    mlx_array* res,
+    const mlx_array packed,
+    const mlx_stream s);
+
+int mlx_fast_turbo_decode_v(
+    mlx_array* res,
+    const mlx_array packed,
+    const mlx_stream s);
+
+int mlx_fast_prefault(mlx_array x);
+
+int mlx_fast_pread_into(
+    mlx_array dst,
+    const char* safetensors_path,
+    const char* tensor_name,
+    uint32_t expert_index);
+
+// mlx_fast_submit_prefetch (PAPPS Background Worker)
+int mlx_fast_submit_prefetch(
+    const char* safetensors_path,
+    const char* tensor_name,
+    uint32_t expert_index);
+
+void mlx_fast_set_prefetch_enabled(bool enabled);
+
 /**@}*/
+
+// ── SSD Flash-Stream metrics snapshot ────────────────────────────────────────
+// Cumulative NVMe throughput stats since process start.
+// Call mlx_ssd_metrics_snapshot() from any thread; never resets any counter.
+
+typedef struct MlxSSDMetricsSnapshot {
+    double   throughput_mb_per_s;  /* 10-s rolling window average (0 before first window) */
+    uint64_t total_bytes_read;     /* Lifetime bytes read from SSD */
+    uint64_t total_chunks;         /* Lifetime expert chunks loaded */
+    double   avg_chunk_latency_ms; /* Lifetime average per-chunk latency (ms) */
+} MlxSSDMetricsSnapshot;
+
+void mlx_ssd_metrics_snapshot(MlxSSDMetricsSnapshot* out);
+
+// TurboKV telemetry — call from Swift on each compression event to accumulate
+// stats that appear in the 10-second SSD stream log.
+void mlx_turbo_kv_record(uint64_t tokens, uint64_t orig_bytes, uint64_t packed_bytes);
 
 #ifdef __cplusplus
 }
