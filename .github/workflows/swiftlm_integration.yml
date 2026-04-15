@@ -35,6 +35,18 @@ jobs:
           cd SwiftLM
           swift build -c release
 
+      - name: Install MLX Metal library
+        run: |
+          python3 -m venv /tmp/mlx_venv
+          /tmp/mlx_venv/bin/pip install --quiet mlx
+          MLX_LIB=$(find /tmp/mlx_venv -name "mlx.metallib" | head -n 1)
+          echo "Copying metallib from $MLX_LIB"
+          # Next to the release binary so the server process finds it immediately
+          cp "$MLX_LIB" SwiftLM/.build/release/
+          # Also seed all other build output dirs defensively
+          find SwiftLM/.build -type d \( -name "debug" -o -name "release" \) \
+            -exec cp "$MLX_LIB" {}/ \; 2>/dev/null || true
+
       - name: Run Speculative Decoding Tests
         run: |
           cd SwiftLM
