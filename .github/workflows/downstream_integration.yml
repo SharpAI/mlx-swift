@@ -22,6 +22,7 @@ jobs:
           repository: SharpAI/SwiftLM
           path: SwiftLM
           token: ${{ secrets.GITHUB_TOKEN }}
+          submodules: recursive
 
       - name: Install Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain || true
@@ -37,21 +38,26 @@ jobs:
           swift package edit mlx-swift --path $GITHUB_WORKSPACE/mlx-swift-pr
         working-directory: SwiftLM
 
-      - name: Build SwiftLM
-        run: swift build --build-tests
-        working-directory: SwiftLM
-
       - name: Install MLX Metal library
         run: |
           python3 -m venv /tmp/mlx_venv
           /tmp/mlx_venv/bin/pip install --quiet mlx
-          METALLIB=/tmp/mlx_venv/lib/python*/site-packages/mlx/lib/mlx.metallib
+          METALLIB=$(echo /tmp/mlx_venv/lib/python*/site-packages/mlx/lib/mlx.metallib)
+          # Make it available system-wide for all subsequent steps
+          sudo cp "$METALLIB" /usr/local/lib/mlx.metallib || true
+          echo "MLX_METAL_LIB=$METALLIB" >> $GITHUB_ENV
+
+      - name: Build SwiftLM
+        run: swift build --build-tests
+        working-directory: SwiftLM
+
+      - name: Copy Metal library to build outputs
+        run: |
+          METALLIB="$MLX_METAL_LIB"
           # Copy to all locations the test runner and linked bundles may search
-          cp $METALLIB SwiftLM/.build/debug/ || true
-          find SwiftLM/.build -name "*.xctest" -exec cp $METALLIB {}/Contents/MacOS/ \; 2>/dev/null || true
-          find SwiftLM/.build -type d \( -name "debug" -o -name "release" \) -exec cp $METALLIB {}/ \; 2>/dev/null || true
-          # Also copy beside test binaries directly
-          find SwiftLM/.build -name "*Tests" -type f -exec sh -c 'cp '$METALLIB' "$(dirname {})"/' \; 2>/dev/null || true
+          find SwiftLM/.build -type d \( -name "debug" -o -name "release" \) -exec cp "$METALLIB" {}/ \; 2>/dev/null || true
+          find SwiftLM/.build -name "*.xctest" -exec cp "$METALLIB" {}/Contents/MacOS/ \; 2>/dev/null || true
+          find SwiftLM/.build -name "*Tests" -type f -exec sh -c 'cp "'"$METALLIB"'" "$(dirname ${1})/"' _ {} \; 2>/dev/null || true
 
       - name: Run SwiftLM Integration Tests
         run: swift test --parallel --skip-build
