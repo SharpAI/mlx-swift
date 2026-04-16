@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.SWIFTLM_PR_TOKEN }}
 
       - name: Configure Git
         run: |
@@ -37,7 +38,7 @@ jobs:
 
       - name: Create Pull Request to Main
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.SWIFTLM_PR_TOKEN }}
         run: |
           gh pr create --base main --head sync/upstream-latest \
             --title "🔄 Auto-Sync: Apple Upstream Repository" \
