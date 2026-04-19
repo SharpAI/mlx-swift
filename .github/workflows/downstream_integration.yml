@@ -32,10 +32,11 @@ jobs:
         working-directory: SwiftLM
 
       - name: Override mlx-swift dependency with PR checkout
-        # SPM `package edit` puts a local editable copy of the package in
-        # .build/checkouts; we then replace its contents with our PR branch.
+        # SwiftLM uses mlx-swift as a local path dependency (./mlx-swift submodule).
+        # SPM `package edit` cannot edit path dependencies, so we directly overwrite
+        # the submodule directory with our PR branch content.
         run: |
-          swift package edit mlx-swift --path $GITHUB_WORKSPACE/mlx-swift-pr
+          rsync -a --delete $GITHUB_WORKSPACE/mlx-swift-pr/ $GITHUB_WORKSPACE/SwiftLM/mlx-swift/
         working-directory: SwiftLM
 
       - name: Install MLX Metal library
