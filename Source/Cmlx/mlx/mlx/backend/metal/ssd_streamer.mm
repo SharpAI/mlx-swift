@@ -39,8 +39,9 @@ SSDStreamer::~SSDStreamer() {
 }
 
 void SSDStreamer::load_sync(off_t byte_offset, size_t length, void* dst_ptr) {
-    // The StreamBuffer pool was removed in favor of caller-provided unified memory,
-    // so we no longer bounds-check the length against an initial buffer size.
+    if (length > buffer_size_bytes_) {
+        throw std::invalid_argument("[SSDStreamer] Load length exceeds Pinned Buffer capacity.");
+    }
 
     // Synchronously read exactly byte_offset into the MLX allocator CPU mapped pointer.
     // By blocking the MLX graph evaluator thread, we implement absolute backpressure
