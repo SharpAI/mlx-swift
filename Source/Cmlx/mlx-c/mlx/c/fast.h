@@ -249,6 +249,18 @@ int mlx_fast_pread_into(
     const char* tensor_name,
     uint32_t expert_index);
 
+// Like mlx_fast_pread_into, but writes the expert's bytes into the dst buffer
+// starting at byte offset `dst_offset`. Reads exactly `bytes_per_expert` bytes
+// (NOT the whole dst array). Use this to populate one slot of a stacked
+// `[N_slots, ..., ...]` buffer, where `dst_offset = slot * bytes_per_expert`.
+// Bounds check: dst_offset + bytes_per_expert <= dst.nbytes.
+int mlx_fast_pread_into_offset(
+    mlx_array dst,
+    const char* safetensors_path,
+    const char* tensor_name,
+    uint32_t expert_index,
+    size_t dst_offset);
+
 /**@}*/
 
 // ── SSD Flash-Stream metrics snapshot ────────────────────────────────────────
