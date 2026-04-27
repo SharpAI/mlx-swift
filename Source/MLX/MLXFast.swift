@@ -376,6 +376,31 @@ public enum MLXFast {
         }
     }
 
+    /// Like `preadInto`, but writes the expert's bytes into the destination at
+    /// byte-offset `dstOffset`. Reads exactly `bytes_per_expert` bytes (the
+    /// safetensors entry's per-expert slab size), NOT the whole dst.
+    ///
+    /// Use when you have a stacked `[N_slots, ..., ...]` MLXArray and want to
+    /// populate slot `k` via `dstOffset = k * bytesPerExpert`. Lets a single
+    /// `gatherQuantizedMM` call replace a per-expert loop, eliminating both
+    /// the per-expert kernel-launch overhead and the `MLX.concatenated` Metal
+    /// copy that would otherwise be needed to fuse N independent buffers.
+    @discardableResult
+    public static func preadIntoOffset(
+        _ dst: MLXArray,
+        safetensorsPath: String,
+        tensorName: String,
+        expertIndex: UInt32,
+        dstOffset: Int
+    ) -> Int32 {
+        precondition(dstOffset >= 0, "dstOffset must be non-negative")
+        return safetensorsPath.withCString { pathPtr in
+            tensorName.withCString { namePtr in
+                mlx_fast_pread_into_offset(dst.ctx, pathPtr, namePtr, expertIndex, dstOffset)
+            }
+        }
+    }
+
     /// Submits an asynchronous background prefetch for a specific expert's weights.
     /// The fetch is handled by a persistent C++ background thread and placed in a unified memory arena.
     public static func pappsPrefetch(
