@@ -1128,8 +1128,8 @@ extern "C" int mlx_fast_pread_into(
 //
 // dst_offset is bytes (not elements). Reads exactly `bytes_per_expert` bytes
 // from the safetensors file at the requested expert index, into
-// `dst.data() + dst_offset`. Bounds check: dst_offset + bytes_per_expert <=
-// dst.nbytes().
+// `dst.data() + dst_offset`. Bounds check (overflow-safe):
+// dst_offset <= dst.nbytes() && bytes_per_expert <= dst.nbytes() - dst_offset.
 //
 // PAPPS fast path: if a background worker already preloaded this expert
 // (cache_id = path|tname_<file_offset>, which is independent of dst_offset),
@@ -1154,7 +1154,7 @@ extern "C" int mlx_fast_pread_into_offset(
         if (!base) throw std::runtime_error("[pread_into_offset] dst has no data pointer — call eval() first");
         size_t total_nbytes = arr.nbytes();
         size_t bpe = entry.bytes_per_expert;
-        if (dst_offset + bpe > total_nbytes) {
+        if (dst_offset > total_nbytes || bpe > total_nbytes - dst_offset) {
             throw std::runtime_error(
                 "[pread_into_offset] dst_offset (" + std::to_string(dst_offset) +
                 ") + bytes_per_expert (" + std::to_string(bpe) +

@@ -393,7 +393,8 @@ public enum MLXFast {
         expertIndex: UInt32,
         dstOffset: Int
     ) -> Int32 {
-        safetensorsPath.withCString { pathPtr in
+        precondition(dstOffset >= 0, "dstOffset must be non-negative")
+        return safetensorsPath.withCString { pathPtr in
             tensorName.withCString { namePtr in
                 mlx_fast_pread_into_offset(dst.ctx, pathPtr, namePtr, expertIndex, dstOffset)
             }
