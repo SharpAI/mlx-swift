@@ -529,11 +529,6 @@ MTL::Library* Device::build_library_(const std::string& source_string) {
   auto options = MTL::CompileOptions::alloc()->init();
   options->setFastMathEnabled(false);
   options->setLanguageVersion(get_metal_version());
-#ifndef NDEBUG
-  if (options->languageVersion() >= MTL::LanguageVersion3_2) {
-    options->setEnableLogging(true);
-  }
-#endif
   auto mtl_lib = device_->newLibrary(ns_code, options, &error);
   options->release();
 
