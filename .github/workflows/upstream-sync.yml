@@ -34,7 +34,18 @@ jobs:
         run: |
           git checkout -B sync/upstream-latest origin/main
           git checkout upstream/main -- .
+          # GITHUB_TOKEN can never push a commit that touches .github/workflows/*,
+          # regardless of the permissions: block above. `rm -rf` before restoring
+          # is required, not optional: `git checkout <ref> -- .github/workflows`
+          # only overwrites paths that already exist in <ref> — a file upstream
+          # just added there (which origin/main never had) would sit in the
+          # working tree/index untouched, and the push would get rejected for
+          # that new file. This repo hasn't hit it yet only because upstream
+          # mlx-swift hasn't added a new workflow file recently; mlx-swift-lm's
+          # sibling sync did hit it, verified locally, and this mirrors the fix.
+          rm -rf .github/workflows
           git checkout origin/main -- .github/workflows
+          git add -A .github/workflows
           git commit -m "chore: sync with upstream/main" || true
           git push -f origin sync/upstream-latest
 
