@@ -106,12 +106,11 @@ open class Module {
     /// See ``noGrad()``
     private var _noGrad = Set<String>()
 
-    private var _items: ModuleItems!
-    private var _setters: [String: TypeErasedSetter]!
+    private var _items: ModuleItems?
+    private var _setters: [String: TypeErasedSetter]?
 
     /// Initializes the module.
     public init() {
-        buildCaches()
     }
 
     private func buildCaches() {
@@ -141,7 +140,13 @@ open class Module {
     ///
     /// Subclasses could potentially override this to provide custom introspection.
     open func items() -> ModuleItems {
-        _items
+        if _items == nil {
+            buildCaches()
+        }
+        guard let items = _items else {
+            fatalError("_items not set after buildCaches()")
+        }
+        return items
     }
 
     /// Describe extra parameters.
@@ -421,6 +426,13 @@ open class Module {
     /// The ``apply(filter:map:)`` can be used for similar purposes to apply changes
     /// in-place.
     ///
+    /// > If this module is used inside a compiled closure (`compile()`) that does not
+    /// list the module in `inputs:`, calling `update(parameters:)` after the first compiled call
+    /// will not be observed by the compiled function -- `inputs:` is what makes `compile` re-read
+    /// current parameter values on every call. `outputs:` is only needed in addition when the
+    /// compiled closure itself mutates this module's parameters and the mutation should be
+    /// written back.
+    ///
     /// If a parameter is missing from the update and validation indicates `.allModelKeysSet` this
     /// will call ``updateMissing(parameter:verify:path:modulePath:)`` which will
     /// throw an error.  Subclasses can override this if needed.
@@ -495,7 +507,7 @@ open class Module {
                 for (dictionaryKey, dictionaryItem) in dictionary {
                     let newKey = "\(key).\(dictionaryKey)"
                     let path = path + [dictionaryKey]
-                    if let valueItem = values[key] {
+                    if let valueItem = values[dictionaryKey] {
                         try apply(key: newKey, path: path, dictionaryItem, valueItem)
                     } else if verify.contains(.allModelKeysSet) {
                         try apply(key: newKey, path: path, dictionaryItem, .none)
@@ -786,7 +798,11 @@ open class Module {
     ///   - key: module key, see ``ModuleInfo``
     ///   - value: the replacement module
     open func updateModule(key: String, _ value: Any) throws {
-        if let setter = _setters[key] {
+        if _setters == nil {
+            buildCaches()
+        }
+
+        if let setter = _setters?[key] {
             do {
                 try setter.updateModule(value)
             } catch {

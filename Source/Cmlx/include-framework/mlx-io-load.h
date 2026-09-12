@@ -5,7 +5,6 @@
 
 #include <memory>
 #include <sstream>
-#include <climits>  // SIZE_MAX
 
 #include <fcntl.h>
 #ifdef _MSC_VER
@@ -13,16 +12,6 @@
 #else
 #include <sys/stat.h>
 #include <unistd.h>
-#endif
-
-// Detect iOS to force sequential I/O (prevents EXC_RESOURCE WAKEUPS).
-#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
-  #define MLX_IOS_SEQUENTIAL_IO 1
-#elif defined(__APPLE__)
-  #include <TargetConditionals.h>
-  #if TARGET_OS_IPHONE
-    #define MLX_IOS_SEQUENTIAL_IO 1
-  #endif
 #endif
 
 #include <Cmlx/mlx-threadpool.h>
@@ -95,7 +84,9 @@ class ParallelFileReader : public Reader {
   void seek(int64_t off, std::ios_base::seekdir way = std::ios_base::beg)
       override {
     if (way == std::ios_base::beg) {
-      lseek(fd_, off, 0);
+      lseek(fd_, off, SEEK_SET);
+    } else if (way == std::ios_base::end) {
+      lseek(fd_, off, SEEK_END);
     } else {
       lseek(fd_, off, SEEK_CUR);
     }
@@ -112,11 +103,7 @@ class ParallelFileReader : public Reader {
   }
 
  private:
-#ifdef MLX_IOS_SEQUENTIAL_IO
-  static constexpr size_t batch_size_ = SIZE_MAX;  // iOS: sequential only, no wakeups
-#else
-  static constexpr size_t batch_size_ = 1 << 25;   // macOS: 32MB parallel batches
-#endif
+  static constexpr size_t batch_size_ = 1 << 25;
   static ThreadPool& thread_pool();
   int fd_;
   std::string label_;
@@ -159,7 +146,9 @@ class FileWriter : public Writer {
   void seek(int64_t off, std::ios_base::seekdir way = std::ios_base::beg)
       override {
     if (way == std::ios_base::beg) {
-      lseek(fd_, off, 0);
+      lseek(fd_, off, SEEK_SET);
+    } else if (way == std::ios_base::end) {
+      lseek(fd_, off, SEEK_END);
     } else {
       lseek(fd_, off, SEEK_CUR);
     }
