@@ -94,7 +94,7 @@ struct TransformNone {
 
 template <typename OutT, typename InT>
 struct TransformAdd {
-  TransformAdd(const float, const float) {}
+  TransformAdd(const float, const float) thread {}
 
   static METAL_FUNC OutT apply(InT x) {
     return static_cast<OutT>(x);
@@ -110,14 +110,14 @@ struct TransformAxpby {
   const float alpha;
   const float beta;
 
-  TransformAxpby(const float alpha_, const float beta_)
-      : alpha(alpha_), beta(beta_) {}
+  TransformAxpby(const float alpha_, const float beta_) thread : alpha(alpha_),
+                                                                 beta(beta_) {}
 
   static METAL_FUNC OutT apply(InT x) {
     return static_cast<OutT>(x);
   }
 
-  METAL_FUNC OutT apply(InT x, OutT c) const {
+  METAL_FUNC OutT apply(InT x, OutT c) const thread {
     return static_cast<OutT>(
         x * static_cast<InT>(alpha) + (static_cast<OutT>(beta) * c));
   }
@@ -232,7 +232,7 @@ struct integral_constant {
   using value_type = T;
   using type = integral_constant;
 
-  METAL_FUNC constexpr operator value_type() const noexcept {
+  METAL_FUNC constexpr operator value_type() const thread noexcept {
     return value;
   }
 
@@ -268,7 +268,8 @@ using Int = integral_constant<int, val>;
   METAL_FUNC constexpr auto __operator__(                   \
       integral_constant<T, tv>, integral_constant<U, uv>) { \
     constexpr auto res = tv __op__ uv;                      \
-    return integral_constant<decltype(res), res>{};         \
+    using res_t = metal::remove_addrspace_t<decltype(res)>; \
+    return integral_constant<res_t, res>{};                 \
   }
 
 integral_const_binop(+, operator+);
@@ -743,43 +744,43 @@ struct NAXSubTile {
 
   frag_type val_frags[kNumFrags];
 
-  METAL_FUNC constexpr void clear() {
+  METAL_FUNC constexpr void clear() thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kNumFrags; ++i) {
       val_frags[i] = frag_type(0);
     }
   }
 
-  METAL_FUNC constexpr thread frag_type& frag_at(const short i, const short j) {
+  METAL_FUNC constexpr thread frag_type& frag_at(const short i, const short j) thread {
     return val_frags[i * kSubTileCols + j];
   }
 
   METAL_FUNC constexpr const thread frag_type& frag_at(
       const short i,
-      const short j) const {
+      const short j) const thread {
     return val_frags[i * kSubTileCols + j];
   }
 
   template <int i, int j>
-  METAL_FUNC constexpr thread frag_type& frag_at() {
+  METAL_FUNC constexpr thread frag_type& frag_at() thread {
     return val_frags[i * kSubTileCols + j];
   }
 
   template <int i, int j>
-  METAL_FUNC constexpr const thread frag_type& frag_at() const {
+  METAL_FUNC constexpr const thread frag_type& frag_at() const thread {
     return val_frags[i * kSubTileCols + j];
   }
 
-  METAL_FUNC thread T* elems() {
+  METAL_FUNC thread T* elems() thread {
     return reinterpret_cast<thread T*>(val_frags);
   }
 
-  METAL_FUNC const thread T* elems() const {
+  METAL_FUNC const thread T* elems() const thread {
     return reinterpret_cast<const thread T*>(val_frags);
   }
 
   template <typename Op>
-  METAL_FUNC void row_reduce(thread metal::vec<T, kRowsPerThread>& vals) const {
+  METAL_FUNC void row_reduce(thread metal::vec<T, kRowsPerThread>& vals) const thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kSubTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -791,7 +792,7 @@ struct NAXSubTile {
   }
 
   template <typename Op>
-  METAL_FUNC void row_bin_op(thread metal::vec<T, kRowsPerThread>& vals) {
+  METAL_FUNC void row_bin_op(thread metal::vec<T, kRowsPerThread>& vals) thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kSubTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -813,7 +814,7 @@ struct NAXSubTile {
       StrX str_x,
       StrY str_y,
       OffX off_x = {},
-      OffY off_y = {}) {
+      OffY off_y = {}) thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kSubTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -840,7 +841,7 @@ struct NAXSubTile {
       StrX str_x,
       StrY str_y,
       OffX off_x = {},
-      OffY off_y = {}) const {
+      OffY off_y = {}) const thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kSubTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -869,7 +870,7 @@ struct NAXSubTile {
       StrY str_y,
       LimX lim_x,
       OffX off_x = {},
-      OffY off_y = {}) {
+      OffY off_y = {}) thread {
     STEEL_PRAGMA_UNROLL
     for (int i = 0; i < kSubTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -901,7 +902,7 @@ struct NAXSubTile {
       LimX lim_x,
       LimY lim_y,
       OffX off_x = {},
-      OffY off_y = {}) {
+      OffY off_y = {}) thread {
     STEEL_PRAGMA_UNROLL
     for (int i = 0; i < kSubTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -934,7 +935,7 @@ struct NAXSubTile {
       LimX lim_x,
       LimY lim_y,
       OffX off_x = {},
-      OffY off_y = {}) const {
+      OffY off_y = {}) const thread {
     STEEL_PRAGMA_UNROLL
     for (int i = 0; i < kSubTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -965,7 +966,7 @@ struct NAXSubTile {
       StrY str_y,
       LimX lim_x,
       OffX off_x = {},
-      OffY off_y = {}) const {
+      OffY off_y = {}) const thread {
     STEEL_PRAGMA_UNROLL
     for (int i = 0; i < kSubTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1001,7 +1002,7 @@ struct NAXSubTile {
       StartY start_y,
       StopY stop_y,
       OffX off_x = Int<0>{},
-      OffY off_y = Int<0>{}) const {
+      OffY off_y = Int<0>{}) const thread {
     const_for_loop<0, kSubTileRows, 1>([&](auto idx_row) {
       const_for_loop<0, kSubTileCols, 1>([&](auto idx_col) {
         NAXFrag_t::store_slice(
@@ -1082,8 +1083,8 @@ METAL_FUNC void subtile_matmad_nax(
 
   // Create matmul output in register
   auto ct_c = gemm_op.template get_destination_cooperative_tensor<
-      decltype(ct_a),
-      decltype(ct_b),
+        metal::remove_addrspace_t<decltype(ct_a)>,
+        metal::remove_addrspace_t<decltype(ct_b)>,
       CType>();
 
   // Load A in to left operand registers
@@ -1159,7 +1160,7 @@ struct NAXTile {
 
   METAL_FUNC NAXTile() thread {}
 
-  METAL_FUNC constexpr void clear() {
+  METAL_FUNC constexpr void clear() thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kSubTiles; ++i) {
       val_subtiles[i].clear();
@@ -1168,31 +1169,31 @@ struct NAXTile {
 
   METAL_FUNC constexpr thread NAXSubTile_t& subtile_at(
       const short i,
-      const short j) {
+      const short j) thread {
     return val_subtiles[i * kTileCols + j];
   }
 
   METAL_FUNC constexpr const thread NAXSubTile_t& subtile_at(
       const short i,
-      const short j) const {
+      const short j) const thread {
     return val_subtiles[i * kTileCols + j];
   }
 
   template <int i, int j>
-  METAL_FUNC constexpr const thread NAXSubTile_t& subtile_at() const {
+  METAL_FUNC constexpr const thread NAXSubTile_t& subtile_at() const thread {
     return val_subtiles[i * kTileCols + j];
   }
 
-  METAL_FUNC thread elem_type* elems() {
+  METAL_FUNC thread elem_type* elems() thread {
     return reinterpret_cast<thread elem_type*>(val_subtiles[0].elems());
   }
 
-  METAL_FUNC const thread elem_type* elems() const {
+  METAL_FUNC const thread elem_type* elems() const thread {
     return reinterpret_cast<const thread elem_type*>(val_subtiles[0].elems());
   }
 
   template <typename Op>
-  METAL_FUNC void row_reduce(thread metal::vec<T, kRowsPerThread>& vals) const {
+  METAL_FUNC void row_reduce(thread metal::vec<T, kRowsPerThread>& vals) const thread {
     auto sub_rows = (thread metal::vec<T, kSubTileThrRows>*)(&vals);
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kTileRows; ++i) {
@@ -1204,7 +1205,7 @@ struct NAXTile {
   }
 
   template <typename Op>
-  METAL_FUNC void row_bin_op(thread metal::vec<T, kRowsPerThread>& vals) {
+  METAL_FUNC void row_bin_op(thread metal::vec<T, kRowsPerThread>& vals) thread {
     auto sub_rows = (thread metal::vec<T, kSubTileThrRows>*)(&vals);
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kTileRows; ++i) {
@@ -1216,7 +1217,7 @@ struct NAXTile {
   }
 
   template <typename U, int str_x, int str_y>
-  METAL_FUNC void load(const threadgroup U* src) {
+  METAL_FUNC void load(const threadgroup U* src) thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1232,7 +1233,7 @@ struct NAXTile {
   }
 
   template <typename U, int str_x, int str_y>
-  METAL_FUNC void store(threadgroup U* dst) const {
+  METAL_FUNC void store(threadgroup U* dst) const thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1248,7 +1249,7 @@ struct NAXTile {
   }
 
   template <typename U>
-  METAL_FUNC void load(const device U* src, const int ld) {
+  METAL_FUNC void load(const device U* src, const int ld) thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1260,7 +1261,7 @@ struct NAXTile {
   }
 
   template <typename U>
-  METAL_FUNC void store(device U* dst, const int ld) const {
+  METAL_FUNC void store(device U* dst, const int ld) const thread {
     STEEL_PRAGMA_UNROLL
     for (short i = 0; i < kTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1273,7 +1274,7 @@ struct NAXTile {
 
   template <typename U>
   METAL_FUNC void
-  load_rows(const device U* src, const int ld, const short n_rows) {
+  load_rows(const device U* src, const int ld, const short n_rows) thread {
     STEEL_PRAGMA_UNROLL
     for (int i = 0; i < kTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1289,7 +1290,7 @@ struct NAXTile {
 
   template <typename U>
   METAL_FUNC void
-  load_safe(const device U* src, const int ld, const short2 src_tile_dims) {
+  load_safe(const device U* src, const int ld, const short2 src_tile_dims) thread {
     STEEL_PRAGMA_UNROLL
     for (int i = 0; i < kTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1308,7 +1309,7 @@ struct NAXTile {
 
   template <typename U>
   METAL_FUNC void store_rows(device U* dst, const int ld, const short n_rows)
-      const {
+      const thread {
     STEEL_PRAGMA_UNROLL
     for (int i = 0; i < kTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1324,7 +1325,7 @@ struct NAXTile {
 
   template <typename U>
   METAL_FUNC void
-  store_safe(device U* dst, const int ld, const short2 dst_tile_dims) const {
+  store_safe(device U* dst, const int ld, const short2 dst_tile_dims) const thread {
     STEEL_PRAGMA_UNROLL
     for (int i = 0; i < kTileRows; ++i) {
       STEEL_PRAGMA_UNROLL
@@ -1346,7 +1347,7 @@ struct NAXTile {
       device U* dst,
       const int ld,
       const short2 start,
-      const short2 stop) const {
+      const short2 stop) const thread {
     const_for_loop<0, kTileRows, 1>([&](auto idx_row) {
       const_for_loop<0, kTileCols, 1>([&](auto idx_col) {
         subtile_at<idx_row.value, idx_col.value>().store_slice(
