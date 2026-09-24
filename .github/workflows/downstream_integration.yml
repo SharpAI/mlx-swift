@@ -24,6 +24,9 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           submodules: recursive
 
+      - name: Select Xcode 26 (Swift 6.2)
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+
       - name: Install Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain || true
 
