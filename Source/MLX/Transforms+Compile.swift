@@ -94,6 +94,19 @@ final class CompiledFunction: @unchecked (Sendable) {
             evalLock.unlock()
         }
 
+        // The backend keys its compile cache on, and builds the compiled
+        // primitive for, the C++ default stream, which never sees the
+        // task-scoped device from `Device.withDefaultDevice`. Without this, a
+        // function first traced on the GPU is reused inside a CPU-scoped call
+        // and runs its fused kernel on the GPU against CPU-stream inputs.
+        var previousDevice = mlx_device_new()
+        mlx_get_default_device(&previousDevice)
+        mlx_set_default_device(Device.defaultDevice().ctx)
+        defer {
+            mlx_set_default_device(previousDevice)
+            mlx_device_free(previousDevice)
+        }
+
         let innerInputs = arguments + stateInputs
         let innerInputsVector = new_mlx_vector_array(innerInputs)
         defer { mlx_vector_array_free(innerInputsVector) }
