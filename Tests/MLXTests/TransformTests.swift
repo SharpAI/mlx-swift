@@ -163,6 +163,22 @@ class TransformTests: XCTestCase {
         XCTAssertEqual(traces, 2)
     }
 
+    func testCompiledKernelsDifferByInputDtype() {
+        // bf16 and f16 inputs upcast to float32 give the same fused graph, so
+        // only the input dtypes tell the two kernels apart.
+        let compiled = compile { (inputs: [MLXArray]) -> [MLXArray] in
+            let x = inputs[0].asType(.float32)
+            return [exp(x) * x]
+        }
+
+        let values = MLXArray(Array(stride(from: Float(-2), to: 2, by: 0.25)))
+        for dtype in [DType.bfloat16, .float16] {
+            let x = values.asType(dtype)
+            let expected = exp(values) * values
+            assertEqual(compiled([x])[0], expected)
+        }
+    }
+
     class CompileTestState: CustomStringConvertible, Updatable {
         var y: MLXArray
         var o: MLXArray?
