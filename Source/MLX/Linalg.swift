@@ -13,6 +13,9 @@ public enum MLXLinalg {
     public enum NormKind: String, Sendable {
         /// Frobenius norm
         case fro
+
+        /// Nuclear norm, the sum of singular values
+        case nuc
     }
 
     /// Matrix or vector norm.
@@ -36,7 +39,7 @@ public enum MLXLinalg {
     /// -2    | smallest singular value      | as below
     /// other | --                           | sum(abs(x)**ord)**(1./ord)
     ///
-    /// > Nuclear norm and norms based on singular values are not yet implemented.
+    /// Nuclear norm and norms based on singular values are implemented by the linalg backend.
     ///
     /// The Frobenius norm is given by G. H. Golub and C. F. Van Loan, *Matrix Computations*,
     ///        Baltimore, MD, Johns Hopkins University Press, 1985, pg. 15
@@ -91,7 +94,7 @@ public enum MLXLinalg {
     /// -2    | smallest singular value      | as below
     /// other | --                           | sum(abs(x)**ord)**(1./ord)
     ///
-    /// > Nuclear norm and norms based on singular values are not yet implemented.
+    /// Nuclear norm and norms based on singular values are implemented by the linalg backend.
     ///
     /// The Frobenius norm is given by G. H. Golub and C. F. Van Loan, *Matrix Computations*,
     ///        Baltimore, MD, Johns Hopkins University Press, 1985, pg. 15
@@ -525,6 +528,46 @@ public enum MLXLinalg {
         return MLXArray(result)
     }
 
+    /// Compute the determinant of a square matrix.
+    ///
+    /// This function supports arrays with at least 2 dimensions. When the
+    /// input has more than two dimensions, the determinant is computed for
+    /// each matrix in the last two dimensions.
+    ///
+    /// - Parameters:
+    ///   - array: input array
+    ///   - stream: stream or device to evaluate on
+    public static func det(_ array: MLXArray, stream: StreamOrDevice = .default) -> MLXArray {
+        var result = mlx_array_new()
+        mlx_linalg_det(&result, array.ctx, stream.ctx)
+        return MLXArray(result)
+    }
+
+    /// Compute the sign and natural log of the absolute value of the
+    /// determinant of a square matrix.
+    ///
+    /// This function supports arrays with at least 2 dimensions. When the
+    /// input has more than two dimensions, the sign and log-absolute-determinant
+    /// are computed for each matrix in the last two dimensions.
+    ///
+    /// For a singular matrix, `sign` is 0 and `logabsdet` is `-inf`.
+    ///
+    /// The determinant can be reconstructed as `det = sign * exp(logabsdet)`.
+    /// This is more numerically stable than computing the determinant directly
+    /// for matrices with large or small determinants.
+    ///
+    /// - Parameters:
+    ///   - array: input array
+    ///   - stream: stream or device to evaluate on
+    public static func slogdet(
+        _ array: MLXArray, stream: StreamOrDevice = .default
+    ) -> (sign: MLXArray, logabsdet: MLXArray) {
+        var sign = mlx_array_new()
+        var logabsdet = mlx_array_new()
+        mlx_linalg_slogdet(&sign, &logabsdet, array.ctx, stream.ctx)
+        return (MLXArray(sign), MLXArray(logabsdet))
+    }
+
 }  // MLXLinalg
 
 /// Matrix or vector norm.
@@ -548,7 +591,7 @@ public enum MLXLinalg {
 /// -2    | smallest singular value      | as below
 /// other | --                           | sum(abs(x)**ord)**(1./ord)
 ///
-/// > Nuclear norm and norms based on singular values are not yet implemented.
+/// Nuclear norm and norms based on singular values are implemented by the linalg backend.
 ///
 /// The Frobenius norm is given by G. H. Golub and C. F. Van Loan, *Matrix Computations*,
 ///        Baltimore, MD, Johns Hopkins University Press, 1985, pg. 15
@@ -597,7 +640,7 @@ public func norm(
 /// -2    | smallest singular value      | as below
 /// other | --                           | sum(abs(x)**ord)**(1./ord)
 ///
-/// > Nuclear norm and norms based on singular values are not yet implemented.
+/// Nuclear norm and norms based on singular values are implemented by the linalg backend.
 ///
 /// The Frobenius norm is given by G. H. Golub and C. F. Van Loan, *Matrix Computations*,
 ///        Baltimore, MD, Johns Hopkins University Press, 1985, pg. 15
@@ -921,4 +964,39 @@ public func eigvalsh(
 /// - Returns: `aplus` such that `a @ aplus @ a = a`
 public func pinv(_ array: MLXArray, stream: StreamOrDevice = .default) -> MLXArray {
     return MLXLinalg.pinv(array, stream: stream)
+}
+
+/// Compute the determinant of a square matrix.
+///
+/// This function supports arrays with at least 2 dimensions. When the
+/// input has more than two dimensions, the determinant is computed for
+/// each matrix in the last two dimensions.
+///
+/// - Parameters:
+///   - array: input array
+///   - stream: stream or device to evaluate on
+public func det(_ array: MLXArray, stream: StreamOrDevice = .default) -> MLXArray {
+    MLXLinalg.det(array, stream: stream)
+}
+
+/// Compute the sign and natural log of the absolute value of the
+/// determinant of a square matrix.
+///
+/// This function supports arrays with at least 2 dimensions. When the
+/// input has more than two dimensions, the sign and log-absolute-determinant
+/// are computed for each matrix in the last two dimensions.
+///
+/// For a singular matrix, `sign` is 0 and `logabsdet` is `-inf`.
+///
+/// The determinant can be reconstructed as `det = sign * exp(logabsdet)`.
+/// This is more numerically stable than computing the determinant directly
+/// for matrices with large or small determinants.
+///
+/// - Parameters:
+///   - array: input array
+///   - stream: stream or device to evaluate on
+public func slogdet(
+    _ array: MLXArray, stream: StreamOrDevice = .default
+) -> (sign: MLXArray, logabsdet: MLXArray) {
+    MLXLinalg.slogdet(array, stream: stream)
 }
