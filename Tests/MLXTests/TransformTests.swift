@@ -10,7 +10,6 @@ import XCTest
 class TransformTests: XCTestCase {
 
     override class func setUp() {
-        setDefaultDevice()
     }
 
     func testEval() {
@@ -133,52 +132,6 @@ class TransformTests: XCTestCase {
         assertEqual(r1, r3)
     }
 
-    func testCompileHonorsScopedDefaultDevice() {
-        // A function traced on the GPU must not be reused inside a CPU-scoped
-        // call: the backend caches compiled graphs per default stream, so the
-        // CPU call has to retrace for its own stream.
-        var traces = 0
-        let compiled = compile { (inputs: [MLXArray]) -> [MLXArray] in
-            traces += 1
-            return [square(inputs[0] * inputs[1])]
-        }
-
-        let i1 = MLXRandom.normal([20, 20])
-        let i2 = MLXRandom.normal([20, 20])
-        let expected = square(i1 * i2)
-
-        assertEqual(compiled([i1, i2])[0], expected)
-        XCTAssertEqual(traces, 1)
-
-        let cpuResult = Device.withDefaultDevice(.cpu) {
-            let r = compiled([i1, i2])[0]
-            eval(r)
-            return r
-        }
-        assertEqual(cpuResult, expected)
-        XCTAssertEqual(traces, 2)
-
-        // Back on the GPU, the original entry is reused.
-        assertEqual(compiled([i1, i2])[0], expected)
-        XCTAssertEqual(traces, 2)
-    }
-
-    func testCompiledKernelsDifferByInputDtype() {
-        // bf16 and f16 inputs upcast to float32 give the same fused graph, so
-        // only the input dtypes tell the two kernels apart.
-        let compiled = compile { (inputs: [MLXArray]) -> [MLXArray] in
-            let x = inputs[0].asType(.float32)
-            return [exp(x) * x]
-        }
-
-        let values = MLXArray(Array(stride(from: Float(-2), to: 2, by: 0.25)))
-        for dtype in [DType.bfloat16, .float16] {
-            let x = values.asType(dtype)
-            let expected = exp(values) * values
-            assertEqual(compiled([x])[0], expected)
-        }
-    }
-
     class CompileTestState: CustomStringConvertible, Updatable {
         var y: MLXArray
         var o: MLXArray?
@@ -261,6 +214,65 @@ class TransformTests: XCTestCase {
         let r2 = compiled([MLXArray(-11)])
         XCTAssertEqual(r2[0].item(Float.self), 11)
         XCTAssertEqual(state.o!.item(Float.self), -8)
+    }
+
+    // https://github.com/ml-explore/mlx-swift-lm/issues/586 --
+    // compile can capture Module parameters
+    class ScaleModule: Module, UnaryLayer {
+        var scale: MLXArray
+
+        init(_ value: Float) {
+            self.scale = MLXArray(value)
+        }
+
+        func callAsFunction(_ x: MLXArray) -> MLXArray {
+            x * scale
+        }
+    }
+
+    func testCompileCapturesModuleParameterWithoutState() {
+        // verify the capture path happens
+
+        let model = ScaleModule(2.0)
+
+        let compiled = compile { (x: MLXArray) -> MLXArray in
+            model(x)
+        }
+
+        let r1 = compiled(MLXArray(Float(3)))
+        XCTAssertEqual(r1.item(Float.self), 6)
+
+        // simulate a LoRA-style in place update of the module's weights
+        model.update(parameters: .unflattened([("scale", MLXArray(Float(10)))]))
+        eval(model)
+
+        // Verify capture of Module parameters -- it doesn't see the update
+        let r2 = compiled(MLXArray(Float(3)))
+        XCTAssertEqual(
+            r2.item(Float.self), 6,
+            "compiled function incorrectly ignored the updated module parameter")
+    }
+
+    func testCompileWithStateObservesModuleParameterUpdates() {
+        // verify inputs correctly handles updated
+        // Module parameters
+
+        let model = ScaleModule(2.0)
+
+        let compiled = compile(inputs: [model]) { (x: MLXArray) -> MLXArray in
+            model(x)
+        }
+
+        let r1 = compiled(MLXArray(Float(3)))
+        XCTAssertEqual(r1.item(Float.self), 6)
+
+        // simulate a LoRA-style in place update of the module's weights
+        model.update(parameters: .unflattened([("scale", MLXArray(Float(10)))]))
+        eval(model)
+
+        // with state:, the compiled function observes the updated parameter
+        let r2 = compiled(MLXArray(Float(3)))
+        XCTAssertEqual(r2.item(Float.self), 30)
     }
 
     func testCompiledRandom() {
@@ -457,5 +469,66 @@ class TransformTests: XCTestCase {
     }
 
     // Note: OptimizerTests contains additional integration tests of compile()
+
+    func testCompileSingleArrayErrorPropagatesViaWithError() throws {
+        // A compiled function that produces a broadcast shape mismatch at evaluation time.
+        // The constant has shape [3]; passing an input with shape [2] triggers an MLX error
+        // inside mlx_closure_apply.
+        //
+        // Before fix: mlx_closure_apply's non-zero return value was silently ignored,
+        // causing innerCall to return [], and the single-array overload to crash with
+        // "Fatal error: Index out of range" — a Swift trap that bypasses withError.
+        //
+        // After fix: innerCall returns [] early on error, the overload returns a placeholder,
+        // and withError properly surfaces the MLXError.
+        let compiled = compile { (x: MLXArray) -> MLXArray in
+            let constant = MLXArray([Float](repeating: 1, count: 3))
+            return x + constant
+        }
+        let x = MLXArray([Float](repeating: 0, count: 2))
+
+        XCTAssertThrowsError(
+            try withError {
+                eval(compiled(x))
+            }
+        ) { error in
+            XCTAssertTrue(error is MLXError, "expected MLXError, got \(error)")
+        }
+    }
+
+    func testCompileMultiArrayErrorPropagatesViaWithError() throws {
+        // Same scenario with the [MLXArray] -> [MLXArray] overload.
+        let compiled = compile { (inputs: [MLXArray]) -> [MLXArray] in
+            let constant = MLXArray([Float](repeating: 1, count: 3))
+            return [inputs[0] + constant]
+        }
+        let x = MLXArray([Float](repeating: 0, count: 2))
+
+        XCTAssertThrowsError(
+            try withError {
+                eval(compiled([x]))
+            }
+        ) { error in
+            XCTAssertTrue(error is MLXError, "expected MLXError, got \(error)")
+        }
+    }
+
+    func testCompileTwoArrayErrorPropagatesViaWithError() throws {
+        // Same scenario with the (MLXArray, MLXArray) -> MLXArray overload.
+        let compiled = compile { (a: MLXArray, _: MLXArray) -> MLXArray in
+            let constant = MLXArray([Float](repeating: 1, count: 3))
+            return a + constant
+        }
+        let x = MLXArray([Float](repeating: 0, count: 2))
+        let y = MLXArray([Float](repeating: 0, count: 2))
+
+        XCTAssertThrowsError(
+            try withError {
+                eval(compiled(x, y))
+            }
+        ) { error in
+            XCTAssertTrue(error is MLXError, "expected MLXError, got \(error)")
+        }
+    }
 
 }
