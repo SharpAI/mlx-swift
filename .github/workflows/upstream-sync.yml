@@ -1,58 +1,59 @@
 name: 🔄 Auto-Sync Upstream
 
+# Merges ml-explore/mlx-swift main into this fork as a real merge commit, pushes it to
+# a NEW branch (bot/upstream-<up>-<base>) and opens a PR. THE BOT NEVER APPROVES,
+# REVIEWS OR MERGES: the only PR call is `gh pr create`, and it never
+# force-pushes. A person reviews and merges the PR. Logic lives in
+# .github/scripts/upstream-sync.sh (runnable locally; a dry run outside GitHub
+# Actions). Conflicts are never resolved or pushed. A red run means a person has
+# to act; see the script header.
+#
+# This replaces a job that did `git checkout upstream/main -- .`, which
+# overwrote the whole tree with upstream and would have wiped every fork patch
+# (TurboQuant, SSD streaming, scoped-device compile fix, ...) had its PR ever
+# been merged.
+
 on:
   schedule:
     - cron: '0 4 * * *' # Every day at 4:00 AM UTC
   workflow_dispatch: # Enable manual triggers
+    inputs:
+      dry_run:
+        description: 'Dry run: merge and report, but push nothing and open no PR'
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: write        # push the new bot/upstream-* branch (never an existing one)
+  pull-requests: write   # `gh pr create` (+ list PRs); nothing here approves or merges
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Add Upstream Remote
-        run: git remote add upstream https://github.com/ml-explore/mlx-swift.git
-
-      - name: Fetch Upstream
-        run: git fetch upstream
-
-      - name: Create or Update Sync Branch
-        run: |
-          git checkout -B sync/upstream-latest origin/main
-          git checkout upstream/main -- .
-          # GITHUB_TOKEN can never push a commit that touches .github/workflows/*,
-          # regardless of the permissions: block above. `rm -rf` before restoring
-          # is required, not optional: `git checkout <ref> -- .github/workflows`
-          # only overwrites paths that already exist in <ref> — a file upstream
-          # just added there (which origin/main never had) would sit in the
-          # working tree/index untouched, and the push would get rejected for
-          # that new file. This repo hasn't hit it yet only because upstream
-          # mlx-swift hasn't added a new workflow file recently; mlx-swift-lm's
-          # sibling sync did hit it, verified locally, and this mirrors the fix.
-          rm -rf .github/workflows
-          git checkout origin/main -- .github/workflows
-          git add -A .github/workflows
-          git commit -m "chore: sync with upstream/main" || true
-          git push -f origin sync/upstream-latest
-
-      - name: Create Pull Request to Main
+      - name: Sync upstream
         env:
-          GH_TOKEN: ${{ secrets.SWIFTLM_PR_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr create --base main --head sync/upstream-latest \
-            --title "🔄 Auto-Sync: Apple Upstream Repository" \
-            --body "Automated PR to synchronize SharpAI fork with Apple mlx-swift upstream repository. Please review merge conflicts (if any) and verify CI pipelines." || echo "PR already exists or no changes"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tried first for `gh pr create`: a PR opened with a personal token
+          # starts CI normally, one opened with GITHUB_TOKEN does not (close and
+          # reopen it once). Needs "Pull requests: write". Optional.
+          PR_TOKEN: ${{ secrets.SWIFTLM_PR_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          UPSTREAM_REPO: ml-explore/mlx-swift
+          # A merge that touches these is listed in the PR body for a human look.
+          WATCH_PATHS: Package.swift Source/Cmlx
+          CONFLICT_HINTS: |
+            - `Source/Cmlx/mlx` and `Source/Cmlx/mlx-c` are vendored as plain trees in this fork (upstream uses submodule gitlinks), so an upstream mlx core / mlx-c bump always conflicts (`mlx~<sha>` / `mlx-c~<sha>` entries). Worked example: SharpAI/mlx-swift#20 (mlx v0.32.2).
+            - Fork-only code that a merge must not lose: TurboQuant / SSD streaming / prefetch sources, `Transforms+Compile.swift` (scoped-device fix, #17), `MLXFast.fromFp8`.
+            - After resolving, check that no upstream fix was silently dropped (per file: `git diff upstream/main HEAD --numstat -- <file>`).
+        run: bash .github/scripts/upstream-sync.sh
