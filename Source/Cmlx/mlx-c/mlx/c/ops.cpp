@@ -1708,6 +1708,7 @@ extern "C" int mlx_gather_qmm(
             (bits.has_value ? std::make_optional<int>(bits.value)
                             : std::nullopt),
             std::string(mode),
+            std::nullopt, // global_scale (added in mlx 0.32.3; not exposed in the C API)
             sorted_indices,
             mlx_stream_get_(s)));
   } catch (std::exception& e) {

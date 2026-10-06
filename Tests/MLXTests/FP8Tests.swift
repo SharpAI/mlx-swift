@@ -10,6 +10,8 @@ class FP8Tests: XCTestCase {
     }
 
     func testFromFP8DecodesE4M3Bytes() {
+        // 0x7F and 0xFF are NaN in E4M3FN (mlx #4376); every other byte is finite.
+        let nanBytes: Set<UInt8> = [0x7F, 0xFF]
         let allBytes = (0 ... 255).map { UInt8($0) }
         let bytes = MLXArray(allBytes)
         let decoded = fromFP8(bytes, dtype: .float32)
@@ -17,8 +19,14 @@ class FP8Tests: XCTestCase {
         XCTAssertEqual(decoded.dtype, .float32)
         XCTAssertEqual(decoded.shape, [256])
 
-        let expected = MLXArray(allBytes.map { e4m3Value($0) })
-        assertEqual(decoded, expected)
+        let values = decoded.asArray(Float.self)
+        for byte in allBytes {
+            if nanBytes.contains(byte) {
+                XCTAssertTrue(values[Int(byte)].isNaN, "byte \(byte) should decode to NaN")
+            } else {
+                XCTAssertEqual(values[Int(byte)], e4m3Value(byte), "byte \(byte)")
+            }
+        }
     }
 
     func testToFP8EncodesE4M3Bytes() {

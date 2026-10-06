@@ -57,10 +57,12 @@ let noCudaCmlxExcludes = [
     // Exclude CUDA backend files, but keep no_cuda.cpp for stubs
     // mlx/mlx/backend/cuda/no_cuda.cpp
     "mlx/mlx/backend/cuda/allocator.cpp",
+    "mlx/mlx/backend/cuda/cholesky.cu",
     "mlx/mlx/backend/cuda/compiled.cpp",
     "mlx/mlx/backend/cuda/conv.cpp",
     "mlx/mlx/backend/cuda/cublas_utils.cpp",
     "mlx/mlx/backend/cuda/cudnn_utils.cpp",
+    "mlx/mlx/backend/cuda/cusolver_utils.cpp",
     "mlx/mlx/backend/cuda/custom_kernel.cpp",
     "mlx/mlx/backend/cuda/delayload.cpp",
     "mlx/mlx/backend/cuda/device_info.cpp",
@@ -77,6 +79,7 @@ let noCudaCmlxExcludes = [
     "mlx/mlx/backend/cuda/scaled_dot_product_attention.cpp",
     "mlx/mlx/backend/cuda/slicing.cpp",
     "mlx/mlx/backend/cuda/utils.cpp",
+    "mlx/mlx/backend/cuda/wddm.cpp",
     "mlx/mlx/backend/cuda/worker.cpp",
     "mlx/mlx/backend/cuda/binary",
     "mlx/mlx/backend/cuda/conv",

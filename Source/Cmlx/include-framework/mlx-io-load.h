@@ -4,11 +4,13 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <sstream>
-#include <climits>  // SIZE_MAX
+#include <climits> // SIZE_MAX
+#include <utility>
 
 #include <fcntl.h>
-#ifdef _MSC_VER
+#ifdef _WIN32
 #include <io.h>
 #else
 #include <sys/stat.h>
@@ -67,6 +69,8 @@ class Writer {
       std::ios_base::seekdir way = std::ios_base::beg) = 0;
   virtual void write(const char* data, size_t n) = 0;
   virtual std::string label() const = 0;
+  virtual void open() {}
+
   virtual ~Writer() = default;
 };
 
@@ -89,20 +93,30 @@ class ParallelFileReader : public Reader {
   }
 
   size_t tell() override {
+#ifdef _WIN32
+    return _lseeki64(fd_, 0, SEEK_CUR);
+#else
     return lseek(fd_, 0, SEEK_CUR);
+#endif
   }
 
   // Warning: do not use this function from multiple threads as
   // it advances the file descriptor
   void seek(int64_t off, std::ios_base::seekdir way = std::ios_base::beg)
       override {
+    int origin;
     if (way == std::ios_base::beg) {
-      lseek(fd_, off, SEEK_SET);
+      origin = SEEK_SET;
     } else if (way == std::ios_base::end) {
-      lseek(fd_, off, SEEK_END);
+      origin = SEEK_END;
     } else {
-      lseek(fd_, off, SEEK_CUR);
+      origin = SEEK_CUR;
     }
+#ifdef _WIN32
+    _lseeki64(fd_, off, origin);
+#else
+    lseek(fd_, off, origin);
+#endif
   }
 
   // Warning: do not use this function from multiple threads as
@@ -116,39 +130,53 @@ class ParallelFileReader : public Reader {
   }
 
  private:
-  // On iOS, always use sequential pread() — no std::async thread spawning.
-  // std::async wakeup bursts during model loading exceed iOS's per-process
-  // wakeup rate limit → EXC_RESOURCE (RESOURCE_TYPE_WAKEUPS) crash.
-  // On macOS, 32MB parallel batches maximize NVMe throughput.
+  // Reads larger than this are split in batches and read in parallel.
+  // Fork: on iOS, always use sequential pread() (no thread spawning). Wakeup
+  // bursts during model loading exceed iOS's per-process wakeup rate limit
+  // (EXC_RESOURCE, RESOURCE_TYPE_WAKEUPS).
 #ifdef MLX_IOS_SEQUENTIAL_IO
   static constexpr size_t batch_size_ = SIZE_MAX;
 #else
-  static constexpr size_t batch_size_ = 1 << 25;  // 32MB
+  static constexpr size_t batch_size_ = 1 << 25;
 #endif
-  static ThreadPool& thread_pool();
+
+  // The pool that reads the batches, held from the first batched read until
+  // the reader is destroyed. It cannot be io::thread_pool(), the tasks that
+  // run there wait for these batches and would deadlock in the same pool.
+  ThreadPool& thread_pool();
+
   int fd_;
   std::string label_;
+  std::once_flag pool_once_;
+  std::shared_ptr<ThreadPool> pool_;
 };
 
 class FileWriter : public Writer {
  public:
   explicit FileWriter() {}
   explicit FileWriter(std::string file_path)
-      : fd_(open(
-            file_path.c_str(),
-            O_CREAT | O_WRONLY | O_TRUNC | O_BINARY,
-            0644)),
-        label_(std::move(file_path)) {}
+      : file_path_(std::move(file_path)) {}
 
   FileWriter(const FileWriter&) = delete;
   FileWriter& operator=(const FileWriter&) = delete;
-  FileWriter(FileWriter&& other) {
-    std::swap(fd_, other.fd_);
+  FileWriter(FileWriter&& other)
+      : fd_(std::exchange(other.fd_, -1)),
+        file_path_(std::move(other.file_path_)) {
+    other.file_path_.clear();
   }
 
   ~FileWriter() override {
-    if (fd_ != 0) {
+    if (fd_ >= 0) {
       close(fd_);
+    }
+  }
+
+  // Kept separate from construction so lazy inputs can be evaluated first,
+  // they may still read from the file.
+  void open() override {
+    if (fd_ < 0 && !file_path_.empty()) {
+      fd_ = ::open(
+          file_path_.c_str(), O_CREAT | O_WRONLY | O_TRUNC | O_BINARY, 0644);
     }
   }
 
@@ -161,21 +189,34 @@ class FileWriter : public Writer {
   }
 
   size_t tell() override {
+    check_open();
+#ifdef _WIN32
+    return _lseeki64(fd_, 0, SEEK_CUR);
+#else
     return lseek(fd_, 0, SEEK_CUR);
+#endif
   }
 
   void seek(int64_t off, std::ios_base::seekdir way = std::ios_base::beg)
       override {
+    check_open();
+    int origin;
     if (way == std::ios_base::beg) {
-      lseek(fd_, off, SEEK_SET);
+      origin = SEEK_SET;
     } else if (way == std::ios_base::end) {
-      lseek(fd_, off, SEEK_END);
+      origin = SEEK_END;
     } else {
-      lseek(fd_, off, SEEK_CUR);
+      origin = SEEK_CUR;
     }
+#ifdef _WIN32
+    _lseeki64(fd_, off, origin);
+#else
+    lseek(fd_, off, origin);
+#endif
   }
 
   void write(const char* data, size_t n) override {
+    check_open();
     while (n != 0) {
       auto m = ::write(fd_, data, std::min(n, static_cast<size_t>(INT32_MAX)));
       if (m <= 0) {
@@ -189,12 +230,18 @@ class FileWriter : public Writer {
   }
 
   std::string label() const override {
-    return "file " + label_;
+    return "file " + file_path_;
   }
 
  private:
-  int fd_{0};
-  std::string label_;
+  void check_open() const {
+    if (!is_open()) {
+      throw std::runtime_error("[write] File " + file_path_ + " is not open.");
+    }
+  }
+
+  int fd_{-1};
+  std::string file_path_;
 };
 
 } // namespace io

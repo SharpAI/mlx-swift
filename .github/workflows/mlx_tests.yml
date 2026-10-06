@@ -1,0 +1,77 @@
+name: MLX Tests (SwiftPM metallib)
+
+# The "Build and Test" job in pull_request.yml only runs on ml-explore/mlx-swift (self-hosted runner), and the
+# integration workflows copy a full mlx.metallib from the Python wheel, so none of them runs the Metal kernels
+# that SwiftPM itself bundles into default.metallib. A kernel missing from KERNEL_LIST in
+# tools/fix-metal-includes.sh therefore only shows up at run time in a consumer that has no mlx.metallib next
+# to its binary. This job builds MLXTests with Xcode and runs them with no mlx.metallib on disk, so the tests
+# load the metallib that SwiftPM built from Source/Cmlx. The second job builds xcode/MLX.xcodeproj, whose
+# Cmlx target keeps its own list of excluded kernel sources that must be extended for every new .metal file.
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  mlx-tests:
+    name: MLXTests (SwiftPM bundle metallib)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 26 (Swift 6.2)
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: Build for testing (macOS)
+        run: |
+          xcodebuild build-for-testing \
+            -scheme mlx-swift-Package \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skipPackagePluginValidation -skipMacroValidation
+
+      - name: Run MLXTests
+        run: |
+          # Fail early if a stray mlx.metallib could hide a kernel missing from default.metallib.
+          if find "$RUNNER_TEMP/dd/Build/Products" -name mlx.metallib | grep -q .; then
+            echo "mlx.metallib found next to the test products; this job must use the SwiftPM bundle metallib"
+            exit 1
+          fi
+          xcrun xctest "$RUNNER_TEMP/dd/Build/Products/Debug/MLXTests.xctest"
+
+  xcodeproj-build:
+    name: Build xcode/MLX.xcodeproj (macOS)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 26 (Swift 6.2)
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: Build xcodeproj
+        working-directory: xcode
+        run: |
+          xcodebuild build-for-testing \
+            -scheme MLX \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd-xcodeproj" \
+            -skipPackagePluginValidation -skipMacroValidation
