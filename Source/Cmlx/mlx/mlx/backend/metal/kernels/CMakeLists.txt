@@ -55,8 +55,10 @@ build_kernel(layer_norm)
 build_kernel(random)
 build_kernel(rms_norm)
 build_kernel(rope)
-build_kernel(scaled_dot_product_attention sdpa_vector.h)
+build_kernel(scaled_dot_product_attention sdpa_blocked.h sdpa_vector.h)
+build_kernel(scaled_dot_product_attention_vjp)
 build_kernel(gated_delta_update gated_delta_update.h)
+build_kernel(gated_delta_update_vjp gated_delta_update_vjp.h)
 if(MLX_METAL_VERSION GREATER_EQUAL 320)
   build_kernel(fence)
 endif()
@@ -113,7 +115,8 @@ set(STEEL_NAX_HEADERS
     steel/gemm/kernels/steel_gemm_fused_nax.h
     steel/gemm/kernels/steel_gemm_gather_nax.h
     steel/gemm/kernels/steel_gemm_splitk_nax.h
-    steel/gemm/kernels/steel_gemm_segmented_nax.h)
+    steel/gemm/kernels/steel_gemm_segmented_nax.h
+    steel/gemm/kernels/steel_gemm_thin_nax.h)
 
 set(STEEL_NAX_ATTN_HEADERS
     steel/defines.h
@@ -170,10 +173,13 @@ if(NOT MLX_METAL_JIT)
     build_kernel(steel/gemm/kernels/steel_gemm_splitk_nax ${STEEL_NAX_HEADERS})
     build_kernel(steel/gemm/kernels/steel_gemm_segmented_nax
                  ${STEEL_NAX_HEADERS})
+    build_kernel(steel/gemm/kernels/steel_gemm_thin_nax ${STEEL_NAX_HEADERS})
 
     build_kernel(quantized_nax quantized_nax.h ${STEEL_NAX_HEADERS})
     build_kernel(gated_delta_update_nax gated_delta_update_nax.h
-                 ${STEEL_NAX_HEADERS})
+                 gated_delta_nax_ops.h ${STEEL_NAX_HEADERS})
+    build_kernel(gated_delta_update_nax_vjp gated_delta_update_nax_vjp.h
+                 gated_delta_nax_ops.h ${STEEL_NAX_HEADERS})
     build_kernel(fp_quantized_nax fp4.h fp8.h fp_quantized_nax.h
                  ${STEEL_NAX_HEADERS})
 

@@ -386,6 +386,13 @@ MTL::ComputePipelineState* get_steel_gemm_segmented_nax_kernel(
     int wm,
     int wn);
 
+MTL::ComputePipelineState* get_steel_gemm_thin_nax_kernel(
+    metal::Device& d,
+    const std::string& kernel_name,
+    const std::string& hash_name,
+    const metal::MTLFCList& func_consts,
+    const std::string& template_def);
+
 MTL::ComputePipelineState* get_qmm_nax_kernel(
     metal::Device& d,
     const std::string& kernel_name,
@@ -444,11 +451,38 @@ MTL::ComputePipelineState* get_gated_delta_kernel(
     const std::string& hash_name,
     const metal::MTLFCList& func_consts);
 
-MTL::ComputePipelineState* get_gated_delta_nax_kernel(
+MTL::ComputePipelineState* get_gated_delta_vjp_kernel(
     metal::Device& d,
     const std::string& kernel_name,
     const std::string& hash_name,
     const metal::MTLFCList& func_consts);
+
+MTL::ComputePipelineState* get_gated_delta_nax_kernel(
+    metal::Device& d,
+    const std::string& kernel_name,
+    const std::string& hash_name,
+    const metal::MTLFCList& func_consts,
+    const array& q,
+    int dk,
+    int dv,
+    int hk,
+    int hv,
+    int c,
+    int ckpt);
+
+MTL::ComputePipelineState* get_gated_delta_vjp_nax_kernel(
+    metal::Device& d,
+    const std::string& kernel_name,
+    const std::string& hash_name,
+    const metal::MTLFCList& func_consts,
+    const array& q,
+    int dk,
+    int dv,
+    int hk,
+    int hv,
+    int c,
+    int ckpt,
+    bool dgamma);
 
 // Create a GPU kernel template definition for JIT compilation
 template <typename... Args>

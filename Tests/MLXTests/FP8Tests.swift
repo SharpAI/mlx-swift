@@ -9,24 +9,29 @@ class FP8Tests: XCTestCase {
     override class func setUp() {
     }
 
-    func testFromFP8DecodesE4M3Bytes() {
-        // 0x7F and 0xFF are NaN in E4M3FN (mlx #4376); every other byte is finite.
-        let nanBytes: Set<UInt8> = [0x7F, 0xFF]
-        let allBytes = (0 ... 255).map { UInt8($0) }
+    func testFromFP8DecodesE4M3BytesPositive() {
+        // 127 and 255 are NaN and don't compare equal, so skip them
+        let allBytes = (0 ... 126).map { UInt8($0) }
         let bytes = MLXArray(allBytes)
         let decoded = fromFP8(bytes, dtype: .float32)
 
         XCTAssertEqual(decoded.dtype, .float32)
-        XCTAssertEqual(decoded.shape, [256])
+        XCTAssertEqual(decoded.shape, [127])
 
-        let values = decoded.asArray(Float.self)
-        for byte in allBytes {
-            if nanBytes.contains(byte) {
-                XCTAssertTrue(values[Int(byte)].isNaN, "byte \(byte) should decode to NaN")
-            } else {
-                XCTAssertEqual(values[Int(byte)], e4m3Value(byte), "byte \(byte)")
-            }
-        }
+        let expected = MLXArray(allBytes.map { e4m3Value($0) })
+        assertEqual(decoded, expected)
+    }
+
+    func testFromFP8DecodesE4M3BytesNegative() {
+        let allBytes = (128 ... 254).map { UInt8($0) }
+        let bytes = MLXArray(allBytes)
+        let decoded = fromFP8(bytes, dtype: .float32)
+
+        XCTAssertEqual(decoded.dtype, .float32)
+        XCTAssertEqual(decoded.shape, [127])
+
+        let expected = MLXArray(allBytes.map { e4m3Value($0) })
+        assertEqual(decoded, expected)
     }
 
     func testToFP8EncodesE4M3Bytes() {
@@ -46,6 +51,7 @@ class FP8Tests: XCTestCase {
 }
 
 private func e4m3Value(_ value: UInt8) -> Float {
+    if (value & 0x7F) == 0x7F { return .nan }
     let sign: Float = (value & 0x80) == 0 ? 1 : -1
     let exponent = Int((value >> 3) & 0x0F)
     let mantissa = Int(value & 0x07)
