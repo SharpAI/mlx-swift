@@ -14,7 +14,8 @@
 namespace mlx::core {
 void prefault(const array& a) {
     if (!a.data_shared_ptr()) return;
-    const uint8_t* ptr = static_cast<const uint8_t*>(const_cast<allocator::Buffer&>(a.buffer()).raw_ptr());
+    allocator::Buffer buf = a.buffer();
+    const uint8_t* ptr = static_cast<const uint8_t*>(buf.raw_ptr());
     if (!ptr) return;
     
     // volatile to prevent the compiler from optimizing the read away
