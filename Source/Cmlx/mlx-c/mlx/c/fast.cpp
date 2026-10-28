@@ -14,7 +14,8 @@
 namespace mlx::core {
 void prefault(const array& a) {
     if (!a.data_shared_ptr()) return;
-    const uint8_t* ptr = static_cast<const uint8_t*>(const_cast<allocator::Buffer&>(a.buffer()).raw_ptr());
+    allocator::Buffer buf = a.buffer();
+    const uint8_t* ptr = static_cast<const uint8_t*>(buf.raw_ptr());
     if (!ptr) return;
     
     // volatile to prevent the compiler from optimizing the read away
@@ -291,6 +292,37 @@ extern "C" int mlx_fast_cuda_kernel_apply(
   return 0;
 }
 
+extern "C" int mlx_fast_gated_delta_update(
+    mlx_vector_array* res,
+    const mlx_array queries,
+    const mlx_array keys,
+    const mlx_array values,
+    const mlx_array gates,
+    const mlx_array beta_,
+    const mlx_array initial_state /* may be null */,
+    const mlx_array mask /* may be null */,
+    const mlx_stream s) {
+  try {
+    mlx_vector_array_set_(
+        *res,
+        mlx::core::fast::gated_delta_update(
+            mlx_array_get_(queries),
+            mlx_array_get_(keys),
+            mlx_array_get_(values),
+            mlx_array_get_(gates),
+            mlx_array_get_(beta_),
+            (initial_state.ctx
+                 ? std::make_optional(mlx_array_get_(initial_state))
+                 : std::nullopt),
+            (mask.ctx ? std::make_optional(mlx_array_get_(mask))
+                      : std::nullopt),
+            mlx_stream_get_(s)));
+  } catch (std::exception& e) {
+    mlx_error(e.what());
+    return 1;
+  }
+  return 0;
+}
 extern "C" int mlx_fast_layer_norm(
     mlx_array* res,
     const mlx_array x,
@@ -634,38 +666,6 @@ extern "C" int mlx_fast_rope_dynamic(
             mlx_array_get_(offset),
             (freqs.ctx ? std::make_optional(mlx_array_get_(freqs))
                        : std::nullopt),
-            mlx_stream_get_(s)));
-  } catch (std::exception& e) {
-    mlx_error(e.what());
-    return 1;
-  }
-  return 0;
-}
-extern "C" int mlx_fast_scaled_dot_product_attention(
-    mlx_array* res,
-    const mlx_array queries,
-    const mlx_array keys,
-    const mlx_array values,
-    float scale,
-    const char* mask_mode,
-    const mlx_array mask_arr /* may be null */,
-    const mlx_array sinks /* may be null */,
-    bool force_fused,
-    const mlx_stream s) {
-  try {
-    mlx_array_set_(
-        *res,
-        mlx::core::fast::scaled_dot_product_attention(
-            mlx_array_get_(queries),
-            mlx_array_get_(keys),
-            mlx_array_get_(values),
-            scale,
-            std::string(mask_mode),
-            (mask_arr.ctx ? std::make_optional(mlx_array_get_(mask_arr))
-                          : std::nullopt),
-            (sinks.ctx ? std::make_optional(mlx_array_get_(sinks))
-                       : std::nullopt),
-            force_fused,
             mlx_stream_get_(s)));
   } catch (std::exception& e) {
     mlx_error(e.what());
@@ -1220,4 +1220,36 @@ extern "C" int mlx_fast_pread_into_offset(
         return 1;
     }
     return 0;
+}
+extern "C" int mlx_fast_scaled_dot_product_attention(
+    mlx_array* res,
+    const mlx_array queries,
+    const mlx_array keys,
+    const mlx_array values,
+    float scale,
+    const char* mask_mode,
+    const mlx_array mask_arr /* may be null */,
+    const mlx_array sinks /* may be null */,
+    bool force_fused,
+    const mlx_stream s) {
+  try {
+    mlx_array_set_(
+        *res,
+        mlx::core::fast::scaled_dot_product_attention(
+            mlx_array_get_(queries),
+            mlx_array_get_(keys),
+            mlx_array_get_(values),
+            scale,
+            std::string(mask_mode),
+            (mask_arr.ctx ? std::make_optional(mlx_array_get_(mask_arr))
+                          : std::nullopt),
+            (sinks.ctx ? std::make_optional(mlx_array_get_(sinks))
+                       : std::nullopt),
+            force_fused,
+            mlx_stream_get_(s)));
+  } catch (std::exception& e) {
+    mlx_error(e.what());
+    return 1;
+  }
+  return 0;
 }

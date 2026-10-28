@@ -97,13 +97,15 @@ if(MLX_METAL_JIT)
     make_jit_source(steel/gemm/kernels/steel_gemm_gather_nax)
     make_jit_source(steel/gemm/kernels/steel_gemm_splitk_nax)
     make_jit_source(steel/gemm/kernels/steel_gemm_segmented_nax)
+    make_jit_source(steel/gemm/kernels/steel_gemm_thin_nax)
 
     make_jit_source(quantized_nax kernels/quantized_utils.h)
     make_jit_source(fp_quantized_nax kernels/quantized_utils.h kernels/fp8.h
                     kernels/fp4.h)
 
     make_jit_source(steel/attn/kernels/steel_attention_nax)
-    make_jit_source(gated_delta_update_nax)
+    make_jit_source(gated_delta_update_nax kernels/gated_delta_nax_ops.h)
+    make_jit_source(gated_delta_update_nax_vjp kernels/gated_delta_nax_ops.h)
 
   else()
     message(
