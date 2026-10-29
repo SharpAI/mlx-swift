@@ -1,4 +1,4 @@
-// swift-tools-version: 5.12
+// swift-tools-version: 6.1
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 // Copyright © 2024 Apple Inc.
 
@@ -401,6 +401,7 @@ let package = Package(
             ]
         ),
     ] + cudaTargets,
+    swiftLanguageModes: [.v5],
     cxxLanguageStandard: .gnucxx20
 )
 
